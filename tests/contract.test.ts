@@ -9,6 +9,10 @@ import type { IndexEntry } from "../src/api/schema";
 // calls against a ~2MB index can be slow, so every test gets a longer
 // timeout than vitest's 5s default.
 const TIMEOUT = 30_000;
+/** The live-path sweep alone downloads ~2 MB and then makes 10 HEAD requests
+ * over the network; 30s is not a realistic budget for it. Measured 2026-09-18:
+ * ~14s on a good run. */
+const SWEEP_TIMEOUT = 90_000;
 
 function sample<T>(items: readonly T[], count: number): T[] {
   if (items.length <= count) return [...items];
@@ -109,12 +113,36 @@ describe("contract: index", () => {
       const sampled = sampleByType(index, 10);
       expect(sampled.some((e) => e.type === "blog")).toBe(true);
       expect(sampled.some((e) => e.type === "lesson")).toBe(true);
-      for (const entry of sampled) {
-        const head = await fetch(`${API_BASE}/${entry.path}`, { method: "HEAD" });
-        expect(head.status).toBe(200);
+      // Three at a time, deliberately — not sequential, not all at once.
+      //
+      // Sequential (the original) put 10 HEADs plus the ~2 MB
+      // `fetchIndex("vi")` above inside one 30s budget and went red on
+      // latency alone: measured 2026-09-18, each HEAD takes 0.45-1.7s and the
+      // whole file took ~60s.
+      //
+      // All 10 in one `Promise.all` is worse, and the failure is not obvious:
+      // undici opens a connection per request, and 10 simultaneous TLS
+      // handshakes to the same Cloudflare edge blew its 10s *connect* timeout
+      // — `ConnectTimeoutError: attempted addresses 104.21.60.237:443,
+      // 172.67.202.137:443`. That reads like the site is down when it is not;
+      // every one of those paths returns 200 to curl.
+      //
+      // A flaky guard test is worse than no guard test — it trains you to
+      // ignore the red.
+      const CONCURRENCY = 3;
+      const failures: { path: string; status: number }[] = [];
+      for (let i = 0; i < sampled.length; i += CONCURRENCY) {
+        const batch = await Promise.all(
+          sampled.slice(i, i + CONCURRENCY).map(async (entry) => ({
+            path: entry.path,
+            status: (await fetch(`${API_BASE}/${entry.path}`, { method: "HEAD" })).status,
+          })),
+        );
+        failures.push(...batch.filter((r) => r.status !== 200));
       }
+      expect(failures).toEqual([]);
     },
-    TIMEOUT,
+    SWEEP_TIMEOUT,
   );
 
   // GitHub Pages only gzips when the client sends Accept-Encoding: gzip.

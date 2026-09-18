@@ -37,3 +37,12 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # Separate step on purpose. This one fetches the real API at
+      # blog.xdev.asia, so a red here means either the contract genuinely
+      # broke or the network did — and you can tell which by whether the step
+      # above is green. Keeping it out of `npm test` is what lets that step
+      # stay a trustworthy signal. `--retry 2` absorbs dropped connections
+      # without hiding a real shape change, which fails all three attempts.
+      - name: Live API contract
+        run: npm run test:contract
