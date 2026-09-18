@@ -70,6 +70,14 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
   // for the proactive hint/banner (brief: "đừng đợi hết mới báo").
   const [remaining, setRemaining] = useState<number | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  // `sending` (state) flips a render behind a tap — two fast taps on Send
+  // both read `sending === false` and both start a `recordAiQuestion()`
+  // call before either write lands, so the AsyncStorage read-modify-write
+  // can under-count (last write wins) while still firing two Gemini
+  // requests. A ref is set synchronously, before any `await`, so the
+  // second tap sees it immediately and bails — closing the gap `sending`
+  // alone leaves open.
+  const sendingRef = useRef(false);
 
   // Task 16: this component instance is reused across opens/closes of the
   // same article (see the `key={`chat-${entry.id}`}` comment in this
@@ -121,7 +129,8 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
 
   const send = useCallback(async () => {
     const question = input.trim();
-    if (!question || sending || remaining === 0) return;
+    if (!question || sending || remaining === 0 || sendingRef.current) return;
+    sendingRef.current = true;
 
     // Task 16: record the attempt against the on-device daily counter
     // BEFORE calling Gemini at all — the point is capping how often this
@@ -132,7 +141,10 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
     // slips in right as the count turns over.
     const usage = await recordAiQuestion();
     setRemaining(usage.remaining);
-    if (!usage.allowed) return;
+    if (!usage.allowed) {
+      sendingRef.current = false;
+      return;
+    }
 
     setErrorNotice(null);
     setInput('');
@@ -156,6 +168,7 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
       setMessages((prev) => [...prev, { role: 'ai', content: readable, isError: true }]);
     } finally {
       setSending(false);
+      sendingRef.current = false;
     }
   }, [input, sending, remaining, messages, title, articleContext]);
 
