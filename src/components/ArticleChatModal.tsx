@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -49,11 +49,41 @@ type ArticleChatModalProps = {
  */
 export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: ArticleChatModalProps) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+
+  // Manual keyboard-height tracking, NOT `KeyboardAvoidingView` — measured
+  // on-device (iPhone 16 Pro simulator): `KeyboardAvoidingView`, whether
+  // wrapped around just the input row or the whole body, had no visible
+  // effect at all inside this `Modal` (`presentationStyle="pageSheet"`),
+  // leaving the input row hidden under the keyboard either way. This is a
+  // known bad interaction between `KeyboardAvoidingView`'s
+  // distance-from-window-bottom measurement and a page-sheet modal's
+  // smaller, non-full-screen presented frame on iOS. Listening to the
+  // keyboard directly and applying the height as bottom padding sidesteps
+  // that measurement entirely — confirmed working end-to-end afterwards
+  // (see task-14a-report.md).
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, (event) => setKeyboardHeight(event.endCoordinates.height));
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+  // `SafeAreaView` below only reserves the TOP inset now; bottom spacing is
+  // this value — the keyboard's height while it's up (which already covers
+  // the home-indicator area), or the safe-area bottom inset while it's
+  // not (so the input row still clears the home indicator when the
+  // keyboard is closed).
+  const bottomSpacing = keyboardHeight > 0 ? keyboardHeight : insets.bottom;
 
   // Computed once per article body, not per keystroke/message.
   const articleContext = useMemo(() => truncateArticleContext(articleMarkdown), [articleMarkdown]);
@@ -90,18 +120,11 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <ThemedView style={styles.flexOne}>
-        <SafeAreaView style={styles.flexOne} edges={['top', 'bottom']}>
-          {/* `KeyboardAvoidingView` wraps the WHOLE body (header through
-              input row), not just the input row — measured on-device
-              (iPhone 16 Pro simulator): wrapping only the input row left it
-              (and the whole row) invisible once the keyboard opened, a
-              known interaction between `KeyboardAvoidingView`'s
-              distance-from-window-bottom measurement and `Modal`'s own
-              separate view hierarchy. Wrapping the full body instead lets
-              the ScrollView shrink and the input row ride up above the
-              keyboard as one unit, matching how `KeyboardAvoidingView` is
-              normally used outside a `Modal`. */}
-          <KeyboardAvoidingView style={styles.flexOne} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {/* `edges={['top']}` only — the bottom inset is handled by
+            `bottomSpacing` above instead (see that state's comment for
+            why `KeyboardAvoidingView` isn't used here). */}
+        <SafeAreaView style={styles.flexOne} edges={['top']}>
+          <View style={[styles.flexOne, { paddingBottom: bottomSpacing }]}>
             <View style={[styles.header, { borderBottomColor: theme.backgroundSelected }]}>
               <View style={styles.headerText}>
                 <ThemedText type="smallBold">Hỏi AI về bài viết</ThemedText>
@@ -172,7 +195,7 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
                 </ThemedText>
               </Pressable>
             </View>
-          </KeyboardAvoidingView>
+          </View>
         </SafeAreaView>
       </ThemedView>
     </Modal>

@@ -127,9 +127,14 @@ export function classifyGeminiError(error: unknown): string {
   }
 
   if (hasErrorCode(error, 'fetch-error')) {
-    if (/\[42[389]\b/.test(message)) {
-      // 429 Too Many Requests, 403 (quota/permission — same shape sans
-      // App Check, see README's Task-14b note), 428 Precondition Required.
+    if (/\[(403|428|429)\b/.test(message)) {
+      // 429 Too Many Requests, 403 Forbidden (quota/permission — same
+      // shape sans App Check, see README's Task-14b note), 428
+      // Precondition Required. Matched by exact status code, not a
+      // character class — `\[42[389]\b` (an earlier version of this
+      // regex) reads as "403 or 428 or 429" in prose but only matches
+      // 423/428/429, silently missing 403, the status this branch exists
+      // for. See tests/chat.test.ts for a case per status.
       return 'Đã vượt giới hạn sử dụng AI lúc này. Vui lòng thử lại sau ít phút.';
     }
     return 'Không kết nối được tới máy chủ AI. Vui lòng thử lại sau.';

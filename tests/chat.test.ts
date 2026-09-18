@@ -121,6 +121,20 @@ describe("classifyGeminiError", () => {
     expect(classifyGeminiError(err)).toMatch(/vượt giới hạn/);
   });
 
+  it("maps a 403 fetch-error (quota/permission — the exact risk of shipping without App Check) to the same quota message", () => {
+    const err = Object.assign(new Error("ai: Error fetching from https://x: [403 Forbidden] permission denied (ai/fetch-error)"), {
+      code: "fetch-error",
+    });
+    expect(classifyGeminiError(err)).toMatch(/vượt giới hạn/);
+  });
+
+  it("does not mis-fire the quota message on an unrelated status code containing similar digits", () => {
+    const err = Object.assign(new Error("ai: Error fetching from https://x: [423 Locked] nope (ai/fetch-error)"), {
+      code: "fetch-error",
+    });
+    expect(classifyGeminiError(err)).toMatch(/máy chủ AI/);
+  });
+
   it("maps a response-error (safety block) to its own message", () => {
     const err = Object.assign(new Error("ai: Response error: blocked (ai/response-error)"), { code: "response-error" });
     expect(classifyGeminiError(err)).toMatch(/bộ lọc nội dung/);
