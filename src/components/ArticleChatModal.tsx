@@ -134,7 +134,7 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
                   {title}
                 </ThemedText>
               </View>
-              <Pressable onPress={onClose} hitSlop={8} style={({ pressed }) => pressed && styles.pressed}>
+              <Pressable onPress={onClose} style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}>
                 <ThemedText type="default">Đóng</ThemedText>
               </Pressable>
             </View>
@@ -243,6 +243,16 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1,
     gap: Spacing.half,
+  },
+  // hitSlop alone doesn't change the LAID-OUT box, only the touch-catching
+  // area around it — inconsistent with every other touchable in this pass
+  // getting a real minHeight. `flex-end`/`center` keeps "Đóng" hugging the
+  // header's trailing edge instead of the box's own center.
+  closeButton: {
+    minHeight: TouchTarget,
+    minWidth: TouchTarget,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   errorBanner: {
     marginHorizontal: Spacing.three,
