@@ -14,6 +14,13 @@ export type ChatRole = 'user' | 'ai';
 export type ChatMessage = {
   role: ChatRole;
   content: string;
+  /**
+   * Set on the `ai` bubble pushed from the catch branch of a failed
+   * `generateContent()` call (task-15 brief: an error bubble must not read
+   * identically to a normal answer). Optional and additive — every existing
+   * caller/test that builds a `{ role, content }` literal is still valid.
+   */
+  isError?: boolean;
 };
 
 /**

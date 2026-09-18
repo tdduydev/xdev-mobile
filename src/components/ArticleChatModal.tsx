@@ -4,7 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Spacing, TouchTarget } from '@/constants/theme';
 import { buildChatPrompt, classifyGeminiError, formatConversationHistory, truncateArticleContext, type ChatMessage } from '@/content/chat';
 import { getGeminiModel } from '@/firebase/ai';
 import { useTheme } from '@/hooks/use-theme';
@@ -113,7 +113,7 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
       // note so a glance at the top of the sheet also explains the state.
       const readable = classifyGeminiError(error);
       setErrorNotice(readable);
-      setMessages((prev) => [...prev, { role: 'ai', content: readable }]);
+      setMessages((prev) => [...prev, { role: 'ai', content: readable, isError: true }]);
     } finally {
       setSending(false);
     }
@@ -140,9 +140,11 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
             </View>
 
             {errorNotice && (
-              <ThemedView type="backgroundElement" style={styles.errorBanner}>
-                <ThemedText type="small">{errorNotice}</ThemedText>
-              </ThemedView>
+              <View style={[styles.errorBanner, { backgroundColor: theme.dangerSoft, borderColor: theme.danger }]}>
+                <ThemedText type="small" themeColor="danger">
+                  {errorNotice}
+                </ThemedText>
+              </View>
             )}
 
             <ScrollView
@@ -156,15 +158,31 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
                 </ThemedText>
               )}
 
-              {messages.map((message, index) => (
-                <View key={index} style={[styles.bubbleRow, message.role === 'user' ? styles.bubbleRowUser : styles.bubbleRowAi]}>
-                  <View style={[styles.bubble, { backgroundColor: message.role === 'user' ? '#3c87f7' : theme.backgroundElement }]}>
-                    <ThemedText type="default" style={message.role === 'user' ? styles.bubbleTextUser : undefined}>
-                      {message.content}
-                    </ThemedText>
+              {messages.map((message, index) => {
+                // Error bubble used to be indistinguishable from a normal AI
+                // answer — both plain `backgroundElement` grey (task-15
+                // brief item 6). Now it gets the same danger treatment as
+                // the quiz result's wrong-answer state.
+                const isUser = message.role === 'user';
+                const bubbleColor = isUser ? theme.brand : message.isError ? theme.dangerSoft : theme.backgroundElement;
+                return (
+                  <View key={index} style={[styles.bubbleRow, isUser ? styles.bubbleRowUser : styles.bubbleRowAi]}>
+                    <View
+                      style={[
+                        styles.bubble,
+                        { backgroundColor: bubbleColor },
+                        message.isError && { borderWidth: 1, borderColor: theme.danger },
+                      ]}>
+                      <ThemedText
+                        type="default"
+                        themeColor={message.isError ? 'danger' : undefined}
+                        style={isUser ? { color: theme.background } : undefined}>
+                        {message.content}
+                      </ThemedText>
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
 
               {sending && (
                 <View style={[styles.bubbleRow, styles.bubbleRowAi]}>
@@ -191,8 +209,13 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
               <Pressable
                 onPress={send}
                 disabled={sending || !input.trim()}
-                style={({ pressed }) => [styles.sendButton, (sending || !input.trim()) && styles.sendButtonDisabled, pressed && styles.pressed]}>
-                <ThemedText type="smallBold" style={styles.sendButtonText}>
+                style={({ pressed }) => [
+                  styles.sendButton,
+                  { backgroundColor: theme.brand },
+                  (sending || !input.trim()) && styles.sendButtonDisabled,
+                  pressed && styles.pressed,
+                ]}>
+                <ThemedText type="smallBold" style={{ color: theme.background }}>
                   Gửi
                 </ThemedText>
               </Pressable>
@@ -227,6 +250,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     borderRadius: Spacing.two,
+    borderWidth: 1,
   },
   messagesContent: {
     padding: Spacing.three,
@@ -250,9 +274,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     borderRadius: Spacing.three,
-  },
-  bubbleTextUser: {
-    color: '#ffffff',
   },
   typingBubble: {
     flexDirection: 'row',
@@ -278,13 +299,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     borderRadius: Spacing.three,
-    backgroundColor: '#3c87f7',
+    minHeight: TouchTarget,
+    justifyContent: 'center',
   },
   sendButtonDisabled: {
     opacity: 0.5,
-  },
-  sendButtonText: {
-    color: '#ffffff',
   },
   pressed: {
     opacity: 0.7,
