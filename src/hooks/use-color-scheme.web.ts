@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import { useColorScheme as useRNColorScheme } from 'react-native';
 
+import { useThemeMode } from '@/state/theme';
+
 /**
  * To support static rendering, this value needs to be re-calculated on the client side for web
  */
@@ -9,7 +11,8 @@ import { useColorScheme as useRNColorScheme } from 'react-native';
 // client, và chuyển trạng thái đó đã do chính quá trình hydrate thực hiện.
 const subscribe = () => () => {};
 
-export function useColorScheme() {
+/** Web counterpart of `use-color-scheme.ts` — see its docstring. */
+export function useColorScheme(): 'light' | 'dark' {
   // useSyncExternalStore trả snapshot của server khi render trên server và
   // snapshot của client sau khi hydrate. Bản cũ dùng useState + useEffect để
   // dò hydration, nhưng đó là setState-trong-effect — rule react-hooks của
@@ -20,7 +23,10 @@ export function useColorScheme() {
     () => false
   );
 
-  const colorScheme = useRNColorScheme();
+  const { mode } = useThemeMode();
+  const system = useRNColorScheme();
 
-  return hasHydrated ? colorScheme : 'light';
+  if (!hasHydrated) return 'light';
+  if (mode === 'light' || mode === 'dark') return mode;
+  return system === 'dark' ? 'dark' : 'light';
 }

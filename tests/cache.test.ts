@@ -11,11 +11,37 @@ vi.mock("../src/api/client", () => ({
 
 // A minimal in-memory AsyncStorage. Real semantics: getItem resolves `null`
 // for a missing key rather than rejecting.
+//
+// [Inference/modeled] Android's AsyncStorage is SQLite-backed and, per the
+// brief and widely-reported community issues (not verified against a real
+// device in this environment), hits a `CursorWindow` limit around 2 MB when
+// a single row is read back. This mock models that as a hard ceiling on
+// `getItem` (the read side, matching the documented failure — the crash is
+// reported at cursor-read time, not on insert) so a regression to "the
+// whole index goes through AsyncStorage" fails deterministically under
+// Node, instead of only ever failing on a real Android device. The ceiling
+// (2,000,000 bytes) is a round number chosen to sit just under the commonly
+// cited 2 MiB (2,097,152 bytes) so a payload sized like Task 2's real
+// measurement of `vi`'s index (2,069,928 bytes) reliably trips it. This is a
+// modeled constraint for this test suite, not a measured device limit.
+const ASYNC_STORAGE_ROW_CEILING_BYTES = 2_000_000;
+
 vi.mock("@react-native-async-storage/async-storage", () => {
   const store = new Map<string, string>();
   return {
     default: {
-      getItem: vi.fn(async (key: string) => store.get(key) ?? null),
+      getItem: vi.fn(async (key: string) => {
+        const value = store.get(key) ?? null;
+        if (value !== null) {
+          const bytes = new TextEncoder().encode(value).length;
+          if (bytes > ASYNC_STORAGE_ROW_CEILING_BYTES) {
+            throw new Error(
+              `Row too big to fit into CursorWindow (modeled): key="${key}" is ${bytes} bytes, over the ${ASYNC_STORAGE_ROW_CEILING_BYTES}-byte modeled ceiling`,
+            );
+          }
+        }
+        return value;
+      }),
       setItem: vi.fn(async (key: string, value: string) => {
         store.set(key, value);
       }),
@@ -84,6 +110,9 @@ vi.mock("expo-file-system", () => {
       if (content === undefined) throw new Error(`File does not exist: ${this.uri}`);
       return content;
     }
+    async text() {
+      return this.textSync();
+    }
   }
 
   const Paths = { cache: new MockDirectory("mock://cache") };
@@ -118,12 +147,31 @@ const sampleEntry: IndexEntry = {
   url: "https://blog.xdev.asia/blog/hello/",
 };
 
-describe("cache: index (AsyncStorage)", () => {
+// Builds a synthetic index sized close to a target byte count, by padding
+// each entry's `excerpt`. Used to reproduce Task 2's real measurement of
+// `vi`'s index (2,069,928 bytes for 1,655 entries) without hardcoding 1,655
+// near-identical entry literals in this file.
+function buildIndexOfSize(entryCount: number, targetBytes: number): IndexEntry[] {
+  const baseBytes = new TextEncoder().encode(
+    JSON.stringify({ ...sampleEntry, excerpt: "" }),
+  ).length;
+  const paddingPerEntry = Math.max(0, Math.ceil((targetBytes - entryCount * baseBytes) / entryCount));
+  return Array.from({ length: entryCount }, (_, i) => ({
+    ...sampleEntry,
+    id: `entry-${i}`,
+    slug: `entry-${i}`,
+    excerpt: "x".repeat(paddingPerEntry),
+  }));
+}
+
+describe("cache: index (filesystem)", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     const AsyncStorage = (await import("@react-native-async-storage/async-storage"))
       .default as unknown as { __reset: () => void };
-    (AsyncStorage as unknown as { __reset: () => void }).__reset();
+    AsyncStorage.__reset();
+    const fs = (await import("expo-file-system")) as unknown as { __reset: () => void };
+    fs.__reset();
   });
 
   it("fetches and caches on a miss, then serves the cache on a hit without refetching", async () => {
@@ -154,6 +202,93 @@ describe("cache: index (AsyncStorage)", () => {
     expect(fetchIndex).toHaveBeenCalledTimes(2); // both served from cache
     expect(viAgain[0].locale).toBe("vi");
     expect(jaAgain[0].locale).toBe("ja");
+  });
+
+  // The reason for this whole change: this is precisely the payload
+  // AsyncStorage's modeled CursorWindow ceiling (see the mock above) would
+  // reject on read-back, and precisely what production `vi` looks like
+  // (Task 2 measured 2,069,928 bytes for 1,655 entries).
+  it("writes and reads back a full `vi`-sized index (~2 MB) through the filesystem cache", async () => {
+    const { fetchIndex } = await import("../src/api/client");
+    const { getCachedIndex } = await import("../src/api/cache");
+    const largeIndex = buildIndexOfSize(1655, 2_069_928);
+    const actualBytes = new TextEncoder().encode(JSON.stringify(largeIndex)).length;
+    // Confirms the fixture is actually over the modeled AsyncStorage ceiling
+    // — otherwise this test would pass for the wrong reason.
+    expect(actualBytes).toBeGreaterThan(ASYNC_STORAGE_ROW_CEILING_BYTES);
+    vi.mocked(fetchIndex).mockResolvedValue(largeIndex);
+
+    const first = await getCachedIndex("vi"); // miss: fetch, then write to disk
+    expect(first).toHaveLength(1655);
+    expect(fetchIndex).toHaveBeenCalledTimes(1);
+
+    const second = await getCachedIndex("vi"); // hit: read back from disk, not AsyncStorage
+    expect(second).toHaveLength(1655);
+    expect(second).toEqual(first);
+    expect(fetchIndex).toHaveBeenCalledTimes(1); // still 1 — served from the cache file
+  });
+});
+
+describe("cache: index refresh (forced refetch for pull-to-refresh / manifest-version check)", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const fs = (await import("expo-file-system")) as unknown as { __reset: () => void };
+    fs.__reset();
+  });
+
+  it("always refetches from the network, even when a cache file already exists, and overwrites it", async () => {
+    const { fetchIndex } = await import("../src/api/client");
+    const { getCachedIndex, refreshIndex } = await import("../src/api/cache");
+    vi.mocked(fetchIndex).mockResolvedValueOnce([sampleEntry]);
+    await getCachedIndex("vi");
+    expect(fetchIndex).toHaveBeenCalledTimes(1);
+
+    const updated = { ...sampleEntry, title: "Updated" };
+    vi.mocked(fetchIndex).mockResolvedValueOnce([updated]);
+    const refreshed = await refreshIndex("vi");
+    expect(refreshed).toEqual([updated]);
+    expect(fetchIndex).toHaveBeenCalledTimes(2);
+
+    const cached = await getCachedIndex("vi");
+    expect(cached).toEqual([updated]);
+    expect(fetchIndex).toHaveBeenCalledTimes(2); // still 2: served from the refreshed cache file
+  });
+
+  it("leaves the existing cache file intact when a refresh's network fetch fails", async () => {
+    const { fetchIndex } = await import("../src/api/client");
+    const { getCachedIndex, refreshIndex } = await import("../src/api/cache");
+    vi.mocked(fetchIndex).mockResolvedValueOnce([sampleEntry]);
+    await getCachedIndex("vi");
+
+    vi.mocked(fetchIndex).mockRejectedValueOnce(new Error("network down"));
+    await expect(refreshIndex("vi")).rejects.toThrow("network down");
+
+    // The stale cache from before the failed refresh is still readable — this
+    // is what lets the UI keep showing content with a "stale" indicator
+    // instead of losing it (spec section 8: "Index tải lỗi, có cache → dùng
+    // cache, hiện banner 'dữ liệu cũ'").
+    const stillCached = await getCachedIndex("vi");
+    expect(stillCached).toEqual([sampleEntry]);
+  });
+});
+
+describe("cache: manifest version marker (AsyncStorage, small value)", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage"))
+      .default as unknown as { __reset: () => void };
+    AsyncStorage.__reset();
+  });
+
+  it("returns null when no version has ever been stored", async () => {
+    const { getCachedManifestVersion } = await import("../src/api/cache");
+    expect(await getCachedManifestVersion()).toBeNull();
+  });
+
+  it("returns the stored version after it is set", async () => {
+    const { getCachedManifestVersion, setCachedManifestVersion } = await import("../src/api/cache");
+    await setCachedManifestVersion("abc123");
+    expect(await getCachedManifestVersion()).toBe("abc123");
   });
 });
 
@@ -196,7 +331,7 @@ describe("cache: markdown (file system)", () => {
     expect(fetchMarkdown).toHaveBeenCalledTimes(2);
   });
 
-  it("sanitizes path separators into a flat cache filename", async () => {
+  it("hashes deeply nested path segments into a flat cache filename", async () => {
     const { fetchMarkdown } = await import("../src/api/client");
     const { getCachedMarkdown } = await import("../src/api/cache");
     vi.mocked(fetchMarkdown).mockResolvedValue("body");
@@ -206,5 +341,29 @@ describe("cache: markdown (file system)", () => {
       getCachedMarkdown("content/series/lap-trinh/foo/chapters/01/lessons/bai-1.md"),
     ).resolves.toBe("body");
     expect(fetchMarkdown).toHaveBeenCalledTimes(1);
+  });
+
+  // The collision the brief flagged as a known, unfixed risk in Task 2:
+  // `replace(/[^a-zA-Z0-9._-]/g, "_")` maps both of these onto the literal
+  // same sanitized filename ("content_blog_a_b.md"), since `/`, `?` and `!`
+  // all become `_`. Measured against all 5,988 real paths (2026-09-18): zero
+  // collisions found in practice, but that was luck in the input, not a
+  // guarantee from the function — hashing (this task, since cache.ts was
+  // already being modified) removes the risk instead of just documenting it.
+  it("caches two different paths that would have collided under the old sanitize-based filename scheme", async () => {
+    const { fetchMarkdown } = await import("../src/api/client");
+    const { getCachedMarkdown } = await import("../src/api/cache");
+    const pathA = "content/blog/a?b.md";
+    const pathB = "content/blog/a!b.md";
+    vi.mocked(fetchMarkdown).mockImplementation(async (path) => `content of ${path}`);
+
+    await expect(getCachedMarkdown(pathA)).resolves.toBe(`content of ${pathA}`);
+    await expect(getCachedMarkdown(pathB)).resolves.toBe(`content of ${pathB}`);
+    expect(fetchMarkdown).toHaveBeenCalledTimes(2);
+
+    // Both must still resolve to their OWN content on a cache hit, not each other's.
+    await expect(getCachedMarkdown(pathA)).resolves.toBe(`content of ${pathA}`);
+    await expect(getCachedMarkdown(pathB)).resolves.toBe(`content of ${pathB}`);
+    expect(fetchMarkdown).toHaveBeenCalledTimes(2); // both served from cache, still 2
   });
 });
