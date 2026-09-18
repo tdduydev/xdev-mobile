@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { getCachedMarkdown } from '@/api/cache';
+import { getBookmarks, getReadingProgress, isBookmarked, saveBookmarks, saveReadingProgress, toggleBookmark, withLessonRead } from '@/api/personal-data';
+import type { Bookmark } from '@/api/schema';
 import { ArticleWebView } from '@/components/ArticleWebView';
 import { ExternalLink } from '@/components/external-link';
 import { LessonNavigationBar } from '@/components/lesson-navigation-bar';
@@ -10,7 +12,10 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { getLessonNeighbors, type LessonNeighbor } from '@/content/series-navigation';
+import { getFirebaseFirestore } from '@/firebase/app';
+import { syncBookmarkAdded, syncBookmarkRemoved, syncReadingProgress } from '@/firebase/sync';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAuth } from '@/state/auth';
 import { useContent } from '@/state/content';
 
 /**
@@ -78,6 +83,70 @@ export default function PostScreen() {
     router.replace({ pathname: '/post/[slug]', params: { slug: neighbor.slug, id: neighbor.id } });
   }, []);
 
+  // Task 13: bookmarks work fully offline/signed-out (personal-data.ts,
+  // AsyncStorage-backed) — Firestore sync below is a no-op extra step for a
+  // signed-in user, never a precondition for bookmarking itself.
+  const { user } = useAuth();
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+
+  // Loaded once on mount, not re-derived per `entry` — the bookmark LIST is
+  // global app state, not scoped to whichever lesson/post is open right
+  // now (unlike `snapshot`/markdown above, which genuinely is per-entry).
+  useEffect(() => {
+    let cancelled = false;
+    getBookmarks().then((saved) => {
+      if (!cancelled) setBookmarks(saved);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const entryIsBookmarked = entry !== undefined && isBookmarked(bookmarks, entry.slug);
+
+  // A plain event-handler callback (the header button's `onPress`), not an
+  // effect — synchronous `setBookmarks` here is unrelated to
+  // `react-hooks/set-state-in-effect` (see content.tsx's doc comment on
+  // that rule, which is specifically about effect bodies). The Firestore
+  // call is fire-and-forget, same `.catch(() => {})` pattern as
+  // `refresh()` in state/content.tsx: a failed sync must not undo the local
+  // toggle the user just saw happen.
+  const toggleCurrentBookmark = useCallback(() => {
+    if (!entry) return;
+    const now = Date.now();
+    const { bookmarks: next, added } = toggleBookmark(bookmarks, entry.slug, now);
+    setBookmarks(next);
+    saveBookmarks(next).catch(() => {});
+    const db = getFirebaseFirestore();
+    const uid = user?.uid ?? null;
+    if (added) {
+      syncBookmarkAdded(db, uid, { slug: entry.slug, savedAt: now }).catch(() => {});
+    } else {
+      syncBookmarkRemoved(db, uid, entry.slug).catch(() => {});
+    }
+  }, [entry, bookmarks, user]);
+
+  // Records "last lesson read" for this entry's series — task-13 brief:
+  // "đồng bộ ... tiến độ đọc lên Firestore." Fires once per `entry`/`user`
+  // change (opening a new lesson, or a sign-in/out while one is open), not
+  // per keystroke or scroll. No React `setState` is called here at all
+  // (only local-storage/Firestore writes), so `react-hooks/set-state-in-effect`
+  // doesn't apply to this effect body.
+  useEffect(() => {
+    if (!entry || entry.type !== 'lesson') return;
+    const now = Date.now();
+    let cancelled = false;
+    getReadingProgress().then((progress) => {
+      if (cancelled) return;
+      const next = withLessonRead(progress, entry.series.slug, entry.id, entry.slug, now);
+      saveReadingProgress(next).catch(() => {});
+      syncReadingProgress(getFirebaseFirestore(), user?.uid ?? null, entry.series.slug, next[entry.series.slug]).catch(() => {});
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry, user]);
+
   // Derived the same way as src/state/content.tsx's index snapshot and
   // series.tsx's series snapshot: `isLoadingMarkdown`/`markdown`/`error`
   // compare `snapshot.path` against the current entry's path at render
@@ -131,7 +200,16 @@ export default function PostScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ headerTitle: entry.title }} />
+      <Stack.Screen
+        options={{
+          headerTitle: entry.title,
+          headerRight: () => (
+            <Pressable onPress={toggleCurrentBookmark} hitSlop={8} style={({ pressed }) => pressed && styles.pressed}>
+              <ThemedText type="default">{entryIsBookmarked ? '★' : '☆'}</ThemedText>
+            </Pressable>
+          ),
+        }}
+      />
       {isLoadingMarkdown && (
         <ThemedView style={styles.centerFill}>
           <ActivityIndicator />

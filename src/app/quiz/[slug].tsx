@@ -1,5 +1,6 @@
+import * as Crypto from 'expo-crypto';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -19,6 +20,10 @@ import {
   setAnswer,
 } from '@/content/quiz-attempt';
 import { groupResultsByDomain, scoreQuiz, type QuizResult } from '@/content/quiz-scoring';
+import { getFirebaseFirestore } from '@/firebase/app';
+import { toQuizResultDocument } from '@/firebase/quiz-result';
+import { syncQuizResult } from '@/firebase/sync';
+import { useAuth } from '@/state/auth';
 
 function toError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err));
@@ -133,6 +138,31 @@ export default function QuizScreen() {
     if (isTimeUp) clearSavedQuizAttempt(slug).catch(() => {});
   }, [isTimeUp, slug]);
 
+  // Task 13: "Kết quả thi thử lưu vào quizResults/{uid}/attempts/{attemptId}."
+  // A fresh `attemptId` per finished attempt (this quiz has no such concept
+  // in Task 12's `QuizAttemptState` — that's resume-state, not a finished
+  // result), and a no-op when signed out (`syncQuizResult` itself checks
+  // `uid`), matching every other Firestore write in this app.
+  const { user } = useAuth();
+  const syncResult = useCallback(
+    (finishedResult: QuizResult) => {
+      if (!quiz) return;
+      const doc = toQuizResultDocument(quiz, finishedResult, Date.now());
+      syncQuizResult(getFirebaseFirestore(), user?.uid ?? null, Crypto.randomUUID(), doc).catch(() => {});
+    },
+    [quiz, user],
+  );
+
+  // Guards against syncing the auto-timeout result twice (e.g. a re-render
+  // while `isTimeUp` stays true) — reset on `retake()` below, the one
+  // interactive path that lets the SAME mounted screen time out again.
+  const hasSyncedTimeoutResultRef = useRef(false);
+  useEffect(() => {
+    if (!isTimeUp || manualResult || !quiz || !attempt || hasSyncedTimeoutResultRef.current) return;
+    hasSyncedTimeoutResultRef.current = true;
+    syncResult(scoreQuiz(quiz.questions, attempt.answers, quiz.passing_score));
+  }, [isTimeUp, manualResult, quiz, attempt, syncResult]);
+
   const selectOption = (optionIndex: number) => {
     setAttempt((prev) => (prev ? setAnswer(prev, prev.currentIndex, optionIndex) : prev));
   };
@@ -149,14 +179,17 @@ export default function QuizScreen() {
 
   const submit = () => {
     if (!quiz || !attempt) return;
-    setManualResult(scoreQuiz(quiz.questions, attempt.answers, quiz.passing_score));
+    const finishedResult = scoreQuiz(quiz.questions, attempt.answers, quiz.passing_score);
+    setManualResult(finishedResult);
     clearSavedQuizAttempt(slug).catch(() => {});
+    syncResult(finishedResult);
   };
 
   const retake = () => {
     if (!quiz) return;
     setAttempt(createAttempt(quiz, Date.now()));
     setManualResult(null);
+    hasSyncedTimeoutResultRef.current = false;
   };
 
   if (isLoading) {
