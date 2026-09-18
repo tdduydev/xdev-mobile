@@ -3,6 +3,7 @@ import * as SplashScreen from 'expo-splash-screen';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { AuthProvider } from '@/state/auth';
 import { ContentProvider } from '@/state/content';
 import { LocaleProvider } from '@/state/locale';
 import { ThemeModeProvider } from '@/state/theme';
@@ -39,9 +40,11 @@ export default function RootLayout() {
   return (
     <ThemeModeProvider>
       <LocaleProvider>
-        <ContentProvider>
-          <RootNavigation />
-        </ContentProvider>
+        <AuthProvider>
+          <ContentProvider>
+            <RootNavigation />
+          </ContentProvider>
+        </AuthProvider>
       </LocaleProvider>
     </ThemeModeProvider>
   );
