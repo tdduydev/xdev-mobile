@@ -91,58 +91,68 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <ThemedView style={styles.flexOne}>
         <SafeAreaView style={styles.flexOne} edges={['top', 'bottom']}>
-          <View style={[styles.header, { borderBottomColor: theme.backgroundSelected }]}>
-            <View style={styles.headerText}>
-              <ThemedText type="smallBold">Hỏi AI về bài viết</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                {title}
-              </ThemedText>
+          {/* `KeyboardAvoidingView` wraps the WHOLE body (header through
+              input row), not just the input row — measured on-device
+              (iPhone 16 Pro simulator): wrapping only the input row left it
+              (and the whole row) invisible once the keyboard opened, a
+              known interaction between `KeyboardAvoidingView`'s
+              distance-from-window-bottom measurement and `Modal`'s own
+              separate view hierarchy. Wrapping the full body instead lets
+              the ScrollView shrink and the input row ride up above the
+              keyboard as one unit, matching how `KeyboardAvoidingView` is
+              normally used outside a `Modal`. */}
+          <KeyboardAvoidingView style={styles.flexOne} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={[styles.header, { borderBottomColor: theme.backgroundSelected }]}>
+              <View style={styles.headerText}>
+                <ThemedText type="smallBold">Hỏi AI về bài viết</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+                  {title}
+                </ThemedText>
+              </View>
+              <Pressable onPress={onClose} hitSlop={8} style={({ pressed }) => pressed && styles.pressed}>
+                <ThemedText type="default">Đóng</ThemedText>
+              </Pressable>
             </View>
-            <Pressable onPress={onClose} hitSlop={8} style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedText type="default">Đóng</ThemedText>
-            </Pressable>
-          </View>
 
-          {errorNotice && (
-            <ThemedView type="backgroundElement" style={styles.errorBanner}>
-              <ThemedText type="small">{errorNotice}</ThemedText>
-            </ThemedView>
-          )}
-
-          <ScrollView
-            ref={scrollRef}
-            style={styles.flexOne}
-            contentContainerStyle={styles.messagesContent}
-            onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
-            {messages.length === 0 && (
-              <ThemedText type="small" themeColor="textSecondary" style={styles.emptyHint}>
-                Hỏi bất kỳ điều gì về bài viết này!
-              </ThemedText>
+            {errorNotice && (
+              <ThemedView type="backgroundElement" style={styles.errorBanner}>
+                <ThemedText type="small">{errorNotice}</ThemedText>
+              </ThemedView>
             )}
 
-            {messages.map((message, index) => (
-              <View key={index} style={[styles.bubbleRow, message.role === 'user' ? styles.bubbleRowUser : styles.bubbleRowAi]}>
-                <View style={[styles.bubble, { backgroundColor: message.role === 'user' ? '#3c87f7' : theme.backgroundElement }]}>
-                  <ThemedText type="default" style={message.role === 'user' ? styles.bubbleTextUser : undefined}>
-                    {message.content}
-                  </ThemedText>
-                </View>
-              </View>
-            ))}
+            <ScrollView
+              ref={scrollRef}
+              style={styles.flexOne}
+              contentContainerStyle={styles.messagesContent}
+              onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
+              {messages.length === 0 && (
+                <ThemedText type="small" themeColor="textSecondary" style={styles.emptyHint}>
+                  Hỏi bất kỳ điều gì về bài viết này!
+                </ThemedText>
+              )}
 
-            {sending && (
-              <View style={[styles.bubbleRow, styles.bubbleRowAi]}>
-                <View style={[styles.bubble, styles.typingBubble, { backgroundColor: theme.backgroundElement }]}>
-                  <ActivityIndicator size="small" />
-                  <ThemedText type="small" themeColor="textSecondary">
-                    AI đang trả lời...
-                  </ThemedText>
+              {messages.map((message, index) => (
+                <View key={index} style={[styles.bubbleRow, message.role === 'user' ? styles.bubbleRowUser : styles.bubbleRowAi]}>
+                  <View style={[styles.bubble, { backgroundColor: message.role === 'user' ? '#3c87f7' : theme.backgroundElement }]}>
+                    <ThemedText type="default" style={message.role === 'user' ? styles.bubbleTextUser : undefined}>
+                      {message.content}
+                    </ThemedText>
+                  </View>
                 </View>
-              </View>
-            )}
-          </ScrollView>
+              ))}
 
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+              {sending && (
+                <View style={[styles.bubbleRow, styles.bubbleRowAi]}>
+                  <View style={[styles.bubble, styles.typingBubble, { backgroundColor: theme.backgroundElement }]}>
+                    <ActivityIndicator size="small" />
+                    <ThemedText type="small" themeColor="textSecondary">
+                      AI đang trả lời...
+                    </ThemedText>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+
             <View style={[styles.inputRow, { borderTopColor: theme.backgroundSelected }]}>
               <TextInput
                 value={input}

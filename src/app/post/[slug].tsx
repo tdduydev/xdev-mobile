@@ -283,10 +283,15 @@ export default function PostScreen() {
               lesson rather than wherever the previous one left off. */}
           <ArticleWebView key={entry.id} title={entry.title} markdown={markdown} colorScheme={colorScheme} />
           <LessonNavigationBar previous={neighbors.previous} next={neighbors.next} onNavigate={navigateToNeighbor} />
-          {/* `key={entry.id}`: fresh conversation per article, same
-              reasoning as `ArticleWebView`'s key above — this screen
-              instance is reused across neighbor navigation. */}
-          <ArticleChatModal key={entry.id} visible={chatOpen} onClose={() => setChatOpen(false)} title={entry.title} articleMarkdown={markdown} />
+          {/* `key={\`chat-${entry.id}\`}`, NOT bare `entry.id` — that's
+              `ArticleWebView`'s key two lines up, and React requires
+              unique keys among SIBLINGS regardless of element type; reusing
+              `entry.id` here threw "Encountered two children with the same
+              key" (caught interactively on-device, not just in review).
+              Still resets on entry change for the same reason as
+              `ArticleWebView`'s key: fresh conversation per article, since
+              this screen instance is reused across neighbor navigation. */}
+          <ArticleChatModal key={`chat-${entry.id}`} visible={chatOpen} onClose={() => setChatOpen(false)} title={entry.title} articleMarkdown={markdown} />
         </View>
       )}
     </>
