@@ -1,0 +1,57 @@
+name: EAS Build
+
+# Cố ý KHÔNG build trên mỗi push vào main.
+#
+# EAS free tier: 15 build iOS + 15 build Android mỗi tháng, hàng chờ ưu tiên thấp
+# (có lúc chờ 90+ phút), timeout build 45 phút, 1 concurrency. Build mỗi push sẽ
+# cháy quota trong khoảng một tuần và làm nghẽn hàng chờ khi thật sự cần build.
+#
+# Nên: build khi gắn tag phát hành, hoặc khi bấm nút.
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Nền tảng cần build
+        type: choice
+        default: all
+        options: [all, ios, android]
+      profile:
+        description: Profile trong eas.json
+        type: choice
+        default: preview
+        options: [preview, production]
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: eas-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Tag đẩy lên thì luôn build production; bấm nút thì theo lựa chọn.
+      - name: Build
+        run: |
+          PLATFORM="${{ inputs.platform || 'all' }}"
+          PROFILE="${{ inputs.profile || 'production' }}"
+          echo "Building platform=$PLATFORM profile=$PROFILE"
+          eas build --platform "$PLATFORM" --profile "$PROFILE" --non-interactive --no-wait

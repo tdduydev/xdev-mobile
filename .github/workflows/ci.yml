@@ -1,0 +1,39 @@
+name: CI
+
+# Chạy trên mọi PR và mọi push vào main. KHÔNG gọi EAS Build ở đây — quota free
+# chỉ 15 build mỗi nền mỗi tháng, xem .github/workflows/build.yml.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Contract test chạy hằng ngày kể cả khi không ai push: Content API nằm ở repo
+  # khác (blog.xdev.asia), nên nó có thể đổi shape mà repo này không hay biết.
+  schedule:
+    - cron: '0 1 * * *'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test

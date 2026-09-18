@@ -1,0 +1,49 @@
+name: EAS Submit
+
+# Chỉ chạy khi bấm nút. Không tự động submit theo tag — đẩy lên store là hành
+# động một chiều, phải có người quyết.
+#
+# Mặc định đi vào TestFlight (iOS) và track internal testing (Android), KHÔNG
+# phải bản public. Phát hành ra public làm trong App Store Connect / Play Console.
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Nền tảng cần submit
+        type: choice
+        default: android
+        options: [ios, android]
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - run: npm ci
+
+      # Service account JSON của Google nằm trong GitHub Secrets dạng base64.
+      # Ghi ra file tạm ngay trước khi dùng, xoá ngay sau đó. Không bao giờ
+      # commit vào repo — repo này public.
+      - name: Ghi Google service account key
+        if: inputs.platform == 'android'
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}" | base64 -d > google-service-account.json
+          test -s google-service-account.json || { echo "Secret rỗng hoặc sai định dạng base64"; exit 1; }
+
+      - name: Submit
+        run: eas submit --platform ${{ inputs.platform }} --latest --non-interactive
+
+      - name: Xoá key
+        if: always()
+        run: rm -f google-service-account.json
