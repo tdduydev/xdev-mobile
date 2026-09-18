@@ -1,6 +1,6 @@
 import Fuse from "fuse.js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { fetchManifest } from "@/api/client";
+import { fetchManifest, fetchSeriesList } from "@/api/client";
 import {
   getCachedIndex,
   getCachedManifestVersion,
@@ -8,7 +8,7 @@ import {
   setCachedManifestVersion,
 } from "@/api/cache";
 import type { Locale } from "@/api/config";
-import type { IndexEntry } from "@/api/schema";
+import type { IndexEntry, Series } from "@/api/schema";
 import { useLocale } from "@/state/locale";
 
 function toError(err: unknown): Error {
@@ -32,6 +32,25 @@ type IndexSnapshot = {
   entries: IndexEntry[];
   error: Error | null;
   isStale: boolean;
+};
+
+/**
+ * Same locale-tagged-snapshot shape and rationale as `IndexSnapshot` above,
+ * for `{locale}/series.json` — lifted up from `src/app/(tabs)/series.tsx`
+ * (task-10 brief: the post screen's prev/next navigation needs the same
+ * series tree the Series tab already fetches, so both should share one
+ * fetch/one in-memory copy per locale rather than each screen fetching its
+ * own). Deliberately its own snapshot type, not folded into `IndexSnapshot`:
+ * `series` has no on-disk cache (unlike `entries` — see cache.ts, which
+ * only covers the index and markdown), so it has its own, simpler
+ * loading/error lifecycle that a shared `error` field would blur (a series
+ * fetch failure must not blank the Feed tab, which reads the index's own
+ * `error`).
+ */
+type SeriesSnapshot = {
+  locale: Locale;
+  series: Series[] | null;
+  error: Error | null;
 };
 
 type ContentContextValue = {
@@ -59,6 +78,20 @@ type ContentContextValue = {
    * ~1,655-entry `vi` build stays fast on a phone.
    */
   fuse: Fuse<IndexEntry>;
+  /**
+   * The current locale's series list (Series tab, and the post screen's
+   * prev/next lookup) — `null` before the first load resolves or if it
+   * failed, `[]` is a legitimate "loaded, zero series" result and is
+   * distinguished from "hasn't loaded" the same way `series.tsx` did
+   * before this was lifted here.
+   */
+  series: Series[] | null;
+  /** True only while there is nothing to show yet for the current locale (mirrors `isLoading` above, for `series` instead of `entries`). */
+  isSeriesLoading: boolean;
+  /** Set when the current locale's series list failed to load. Deliberately separate from `error` above — see `SeriesSnapshot`'s doc comment. */
+  seriesError: Error | null;
+  /** Refetches the current locale's series list (the Series tab's retry button). Separate from `refresh()`: retrying the index shouldn't silently also retry series, or vice versa. */
+  refreshSeries: () => Promise<void>;
 };
 
 const ContentContext = createContext<ContentContextValue | undefined>(undefined);
@@ -79,12 +112,18 @@ export function ContentProvider({ children }: { children: ReactNode }) {
   const { locale } = useLocale();
   const [snapshot, setSnapshot] = useState<IndexSnapshot | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [seriesSnapshot, setSeriesSnapshot] = useState<SeriesSnapshot | null>(null);
 
   const isCurrent = snapshot !== null && snapshot.locale === locale;
   const isLoading = !isCurrent;
   const entries = isCurrent ? snapshot.entries : EMPTY_ENTRIES;
   const error = isCurrent ? snapshot.error : null;
   const isStale = isCurrent ? snapshot.isStale : false;
+
+  const isSeriesCurrent = seriesSnapshot !== null && seriesSnapshot.locale === locale;
+  const isSeriesLoading = !isSeriesCurrent;
+  const series = isSeriesCurrent ? seriesSnapshot.series : null;
+  const seriesError = isSeriesCurrent ? seriesSnapshot.error : null;
 
   // Called from event handlers (pull-to-refresh, a retry button) — never
   // from inside a `useEffect`, so a synchronous setState here isn't the
@@ -110,6 +149,28 @@ export function ContentProvider({ children }: { children: ReactNode }) {
       setIsRefreshing(false);
     }
   }, [locale]);
+
+  // Genuine `.then()/.catch()` chaining, not async/await — copied verbatim
+  // from `series.tsx`'s pre-lift `load()` (same function, moved up a
+  // level): calling an async/await version of this from the effect below
+  // still trips `react-hooks/set-state-in-effect`, because it only
+  // recognizes a setState call as deferred when it sits inside a
+  // `.then()`/`.catch()` callback (a separate closure), not merely
+  // sequenced after an `await` in the calling function itself.
+  const refreshSeries = useCallback(() => {
+    return fetchSeriesList(locale)
+      .then((list) => setSeriesSnapshot({ locale, series: list, error: null }))
+      .catch((err) => {
+        // No cache layer for series (see cache.ts — only the index and
+        // markdown are cached), so any failure here is spec section 8, row
+        // 1: offline with nothing to show for this locale's series list.
+        setSeriesSnapshot({ locale, series: null, error: toError(err) });
+      });
+  }, [locale]);
+
+  useEffect(() => {
+    refreshSeries();
+  }, [refreshSeries]);
 
   useEffect(() => {
     let cancelled = false;
@@ -167,8 +228,20 @@ export function ContentProvider({ children }: { children: ReactNode }) {
   const fuse = useMemo(() => new Fuse(entries, FUSE_OPTIONS), [entries]);
 
   const value = useMemo(
-    () => ({ entries, isLoading, isRefreshing, error, isStale, refresh, fuse }),
-    [entries, isLoading, isRefreshing, error, isStale, refresh, fuse],
+    () => ({
+      entries,
+      isLoading,
+      isRefreshing,
+      error,
+      isStale,
+      refresh,
+      fuse,
+      series,
+      isSeriesLoading,
+      seriesError,
+      refreshSeries,
+    }),
+    [entries, isLoading, isRefreshing, error, isStale, refresh, fuse, series, isSeriesLoading, seriesError, refreshSeries],
   );
 
   return <ContentContext.Provider value={value}>{children}</ContentContext.Provider>;

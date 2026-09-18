@@ -54,7 +54,10 @@ export default function FeedScreen() {
         }
         renderItem={({ item }) => (
           <ThemedView style={styles.itemWrapper}>
-            <EntryCard entry={item} onPress={() => router.push(`/post/${item.slug}`)} />
+            <EntryCard
+              entry={item}
+              onPress={() => router.push({ pathname: '/post/[slug]', params: { slug: item.slug, id: item.id } })}
+            />
           </ThemedView>
         )}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} />}

@@ -70,7 +70,10 @@ export default function SearchScreen() {
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <ThemedView style={styles.itemWrapper}>
-            <EntryCard entry={item} onPress={() => router.push(`/post/${item.slug}`)} />
+            <EntryCard
+              entry={item}
+              onPress={() => router.push({ pathname: '/post/[slug]', params: { slug: item.slug, id: item.id } })}
+            />
           </ThemedView>
         )}
         ListEmptyComponent={

@@ -1,17 +1,16 @@
 import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { fetchSeriesList } from '@/api/client';
-import { resolveAssetUrl, type Locale } from '@/api/config';
+import { resolveAssetUrl } from '@/api/config';
 import type { Series } from '@/api/schema';
 import { EmptyState } from '@/components/empty-state';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ThumbnailImage } from '@/components/thumbnail-image';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { useLocale } from '@/state/locale';
+import { useContent } from '@/state/content';
 
 function SeriesRow({
   series,
@@ -22,7 +21,10 @@ function SeriesRow({
   series: Series;
   expanded: boolean;
   onToggle: () => void;
-  onLessonPress: (slug: string) => void;
+  // `id` travels alongside `slug` so the destination post screen can
+  // disambiguate two lessons that share a slug in the same series (see
+  // `onLessonPress` below and post/[slug].tsx's route-resolution comment).
+  onLessonPress: (slug: string, id: string) => void;
 }) {
   const imageUrl = resolveAssetUrl(series.featuredImage);
   const metaParts = [series.category?.name, series.level, series.lessonCount ? `${series.lessonCount} lessons` : undefined].filter(
@@ -64,7 +66,7 @@ function SeriesRow({
               {chapter.lessons.map((lesson) => (
                 <Pressable
                   key={lesson.id}
-                  onPress={() => onLessonPress(lesson.slug)}
+                  onPress={() => onLessonPress(lesson.slug, lesson.id)}
                   style={({ pressed }) => [styles.lessonRow, pressed && styles.pressed]}>
                   <ThemedText type="small">{lesson.title}</ThemedText>
                 </Pressable>
@@ -77,47 +79,13 @@ function SeriesRow({
   );
 }
 
-type SeriesSnapshot = {
-  locale: Locale;
-  series: Series[] | null;
-  error: Error | null;
-};
-
 export default function SeriesScreen() {
-  const { locale } = useLocale();
-  // `isLoading`/`seriesList`/`error` are derived by comparing
-  // `snapshot.locale` against the current `locale` (see the identical
-  // pattern, with the same rationale, in src/state/content.tsx) rather than
-  // set synchronously inside the loading effect — that pattern is what
-  // `react-hooks/set-state-in-effect` flags.
-  const [snapshot, setSnapshot] = useState<SeriesSnapshot | null>(null);
+  // Series data now lives in ContentProvider (src/state/content.tsx),
+  // fetched once per locale and shared with the post screen's prev/next
+  // navigation (task-10 brief) instead of this screen fetching its own
+  // copy on every mount.
+  const { series: seriesList, isSeriesLoading: isLoading, seriesError: error, refreshSeries } = useContent();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-
-  const isCurrent = snapshot !== null && snapshot.locale === locale;
-  const isLoading = !isCurrent;
-  const seriesList = isCurrent ? snapshot.series : null;
-  const error = isCurrent ? snapshot.error : null;
-
-  // Genuine `.then()/.catch()` chaining, not async/await: calling `load()`
-  // from the effect below with a `setSnapshot` sitting after an `await` in
-  // the SAME function body still trips `react-hooks/set-state-in-effect` —
-  // it only recognizes a setState call as deferred when it is inside a
-  // `.then()`/`.catch()` callback (a separate closure), not merely
-  // sequenced after an `await` in the calling function itself.
-  const load = useCallback(() => {
-    fetchSeriesList(locale)
-      .then((list) => setSnapshot({ locale, series: list, error: null }))
-      .catch((err) => {
-        // No cache layer for series (see cache.ts — only the index and
-        // markdown are cached), so any failure here is spec section 8, row
-        // 1: offline with nothing to show, empty state + retry.
-        setSnapshot({ locale, series: null, error: err instanceof Error ? err : new Error(String(err)) });
-      });
-  }, [locale]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const toggle = (slug: string) => {
     setExpanded((prev) => {
@@ -145,7 +113,7 @@ export default function SeriesScreen() {
         <EmptyState
           title="No series to show"
           message="Couldn't load the series list and nothing is saved on this device yet. Check your connection and try again."
-          onRetry={load}
+          onRetry={refreshSeries}
         />
       </SafeAreaView>
     );
@@ -168,7 +136,7 @@ export default function SeriesScreen() {
               series={item}
               expanded={expanded.has(item.slug)}
               onToggle={() => toggle(item.slug)}
-              onLessonPress={(slug) => router.push(`/post/${slug}`)}
+              onLessonPress={(slug, id) => router.push({ pathname: '/post/[slug]', params: { slug, id } })}
             />
           </View>
         )}
