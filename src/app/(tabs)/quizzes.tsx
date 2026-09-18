@@ -8,7 +8,8 @@ import type { QuizSummary } from '@/api/schema';
 import { EmptyState } from '@/components/empty-state';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
 function toError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err));
@@ -24,6 +25,7 @@ type QuizListSnapshot = {
 };
 
 function QuizRow({ quiz, onPress }: { quiz: QuizSummary; onPress: () => void }) {
+  const theme = useTheme();
   const metaParts = [
     quiz.provider,
     quiz.level,
@@ -34,12 +36,15 @@ function QuizRow({ quiz, onPress }: { quiz: QuizSummary; onPress: () => void }) 
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => pressed && styles.pressed}>
-      <ThemedView type="backgroundElement" style={styles.quizCard}>
-        <ThemedText type="smallBold" numberOfLines={2}>
+      {/* Same title/description/meta hierarchy fix as EntryCard (task-15
+          brief item 1) — this card had the identical bug: title and
+          description at the same weight and size. */}
+      <ThemedView type="background" style={[styles.quizCard, { borderColor: theme.border }]}>
+        <ThemedText type="cardTitle" numberOfLines={2}>
           {quiz.title}
         </ThemedText>
         {quiz.description.length > 0 && (
-          <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
+          <ThemedText type="default" themeColor="textSecondary" numberOfLines={2}>
             {quiz.description}
           </ThemedText>
         )}
@@ -157,7 +162,8 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   quizCard: {
-    borderRadius: Spacing.three,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
     padding: Spacing.three,
     gap: Spacing.one,
   },

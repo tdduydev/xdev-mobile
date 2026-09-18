@@ -56,7 +56,7 @@ function AccountSection() {
   if (status === 'loading') {
     return (
       <View style={styles.section}>
-        <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionLabel}>
+        <ThemedText type="label" themeColor="textSecondary" style={styles.sectionLabel}>
           TÀI KHOẢN
         </ThemedText>
         <ActivityIndicator />
@@ -66,7 +66,7 @@ function AccountSection() {
 
   return (
     <View style={styles.section}>
-      <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionLabel}>
+      <ThemedText type="label" themeColor="textSecondary" style={styles.sectionLabel}>
         TÀI KHOẢN
       </ThemedText>
 
@@ -137,7 +137,7 @@ export default function SettingsScreen() {
         <AccountSection />
 
         <View style={styles.section}>
-          <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionLabel}>
+          <ThemedText type="label" themeColor="textSecondary" style={styles.sectionLabel}>
             LANGUAGE
           </ThemedText>
           <View style={styles.optionGroup}>
@@ -153,7 +153,7 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
-          <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionLabel}>
+          <ThemedText type="label" themeColor="textSecondary" style={styles.sectionLabel}>
             APPEARANCE
           </ThemedText>
           <View style={styles.optionGroup}>
@@ -191,7 +191,6 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     paddingHorizontal: Spacing.one,
-    letterSpacing: 0.5,
   },
   optionGroup: {
     gap: Spacing.two,
