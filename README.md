@@ -36,6 +36,23 @@ npm run build && npx serve out
 EXPO_PUBLIC_API_BASE=http://localhost:3000/api/v1 npx expo start
 ```
 
+## Chat AI trong bài viết
+
+Màn đọc bài (`src/app/post/[slug].tsx`) có nút 💬 trên header mở chat hỏi AI về
+đúng bài đang đọc (Gemini 2.5 Flash qua Firebase AI Logic, project `xdev-asia`
+— cùng project và model web `blog.xdev.asia` đang dùng ở
+`AIChatWidget.tsx`). Chạy được cả khi chưa đăng nhập. Bài dài bị cắt còn 6000
+ký tự đầu trước khi đưa vào prompt (`src/content/chat.ts`).
+
+**⚠️ Chưa có App Check.** `firebase/ai` được gọi thẳng bằng `apiKey` public
+trong `src/firebase/config.ts` — client nào lấy được config này (đọc được từ
+bundle, không phải bí mật) đều gọi được Gemini bằng quota của project
+`xdev-asia`, không chỉ từ app này. Đây là đánh đổi có chủ đích: bật App Check
+cần rời Expo Go (App Attest / Play Integrity chỉ có ở
+`@react-native-firebase/app-check`, một native module), và enforcement còn
+chưa bật ở phía project. Việc bật App Check là Task 14b, làm gần lúc phát
+hành. Đừng tưởng chat này đã được bảo vệ quota chỉ vì nó chạy được.
+
 ## Kiểm tra
 
 ```bash

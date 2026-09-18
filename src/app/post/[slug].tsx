@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { getCachedMarkdown } from '@/api/cache';
 import { getBookmarks, getReadingProgress, isBookmarked, saveBookmarks, saveReadingProgress, toggleBookmark, withLessonRead } from '@/api/personal-data';
 import type { Bookmark } from '@/api/schema';
+import { ArticleChatModal } from '@/components/ArticleChatModal';
 import { ArticleWebView } from '@/components/ArticleWebView';
 import { ExternalLink } from '@/components/external-link';
 import { LessonNavigationBar } from '@/components/lesson-navigation-bar';
@@ -103,6 +104,26 @@ export default function PostScreen() {
   }, []);
 
   const entryIsBookmarked = entry !== undefined && isBookmarked(bookmarks, entry.slug);
+
+  // Task 14a: "Hỏi AI về bài viết" chat. This screen instance is reused
+  // across neighbor navigation (`navigateToNeighbor` above uses `replace`,
+  // not a fresh push — see its own doc comment), so `chatOpen` must reset
+  // when `entry.id` changes or the sheet would stay open (with
+  // `ArticleChatModal`'s own `key` below silently swapping the
+  // conversation underneath it) when the reader taps Previous/Next while
+  // chatting about the current lesson. Reset during render — the
+  // "adjusting state when a prop changes" pattern
+  // (react.dev/learn/you-might-not-need-an-effect) — rather than in a
+  // `useEffect`, which `react-hooks/set-state-in-effect` (see this file's
+  // markdown-loading state above, and content.tsx's doc comment on the
+  // same rule) flags for a direct, unconditional `setState` in the effect
+  // body.
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatOpenForEntryId, setChatOpenForEntryId] = useState(entry?.id);
+  if (entry?.id !== chatOpenForEntryId) {
+    setChatOpenForEntryId(entry?.id);
+    setChatOpen(false);
+  }
 
   // A plain event-handler callback (the header button's `onPress`), not an
   // effect — synchronous `setBookmarks` here is unrelated to
@@ -204,9 +225,19 @@ export default function PostScreen() {
         options={{
           headerTitle: entry.title,
           headerRight: () => (
-            <Pressable onPress={toggleCurrentBookmark} hitSlop={8} style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedText type="default">{entryIsBookmarked ? '★' : '☆'}</ThemedText>
-            </Pressable>
+            <View style={styles.headerButtons}>
+              {/* Only once there's markdown to chat about — brief:
+                  contextual chat needs the article's own content, not an
+                  empty chat frame opened before it's loaded. */}
+              {!isLoadingMarkdown && !error && markdown !== null && (
+                <Pressable onPress={() => setChatOpen(true)} hitSlop={8} style={({ pressed }) => pressed && styles.pressed}>
+                  <ThemedText type="default">💬</ThemedText>
+                </Pressable>
+              )}
+              <Pressable onPress={toggleCurrentBookmark} hitSlop={8} style={({ pressed }) => pressed && styles.pressed}>
+                <ThemedText type="default">{entryIsBookmarked ? '★' : '☆'}</ThemedText>
+              </Pressable>
+            </View>
           ),
         }}
       />
@@ -252,6 +283,10 @@ export default function PostScreen() {
               lesson rather than wherever the previous one left off. */}
           <ArticleWebView key={entry.id} title={entry.title} markdown={markdown} colorScheme={colorScheme} />
           <LessonNavigationBar previous={neighbors.previous} next={neighbors.next} onNavigate={navigateToNeighbor} />
+          {/* `key={entry.id}`: fresh conversation per article, same
+              reasoning as `ArticleWebView`'s key above — this screen
+              instance is reused across neighbor navigation. */}
+          <ArticleChatModal key={entry.id} visible={chatOpen} onClose={() => setChatOpen(false)} title={entry.title} articleMarkdown={markdown} />
         </View>
       )}
     </>
@@ -261,6 +296,11 @@ export default function PostScreen() {
 const styles = StyleSheet.create({
   articleContainer: {
     flex: 1,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
   },
   centerFill: {
     flex: 1,
