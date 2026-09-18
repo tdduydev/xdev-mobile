@@ -5,8 +5,9 @@ import type { IndexEntry } from '@/api/schema';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ThumbnailImage } from '@/components/thumbnail-image';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { formatPublishedDate } from '@/content/feed';
+import { useTheme } from '@/hooks/use-theme';
 
 type EntryCardProps = {
   entry: IndexEntry;
@@ -15,6 +16,7 @@ type EntryCardProps = {
 
 /** A blog post or lesson row — shared by the Feed, Search, and Series tabs so a result looks the same wherever it's found. */
 export function EntryCard({ entry, onPress }: EntryCardProps) {
+  const theme = useTheme();
   const imageUrl = resolveAssetUrl(entry.featuredImage);
   const date = formatPublishedDate(entry.publishedAt);
   const metaParts = [
@@ -24,14 +26,19 @@ export function EntryCard({ entry, onPress }: EntryCardProps) {
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => pressed && styles.pressed}>
-      <ThemedView type="backgroundElement" style={styles.card}>
-        {imageUrl && <ThumbnailImage uri={imageUrl} style={styles.image} contentFit="cover" transition={150} />}
+      <ThemedView type="background" style={[styles.card, { borderColor: theme.border }]}>
+        {imageUrl && (
+          <ThumbnailImage uri={imageUrl} title={entry.title} style={styles.image} contentFit="cover" transition={150} />
+        )}
         <View style={styles.body}>
-          <ThemedText type="smallBold" numberOfLines={2}>
+          {/* Title/excerpt/meta each a step apart on the type scale (cardTitle
+              17 / body 15 / caption 13) — same weight+size for all three was
+              the reported bug: nothing told the eye which line to read first. */}
+          <ThemedText type="cardTitle" numberOfLines={2}>
             {entry.title}
           </ThemedText>
           {entry.excerpt.length > 0 && (
-            <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
+            <ThemedText type="default" themeColor="textSecondary" numberOfLines={2}>
               {entry.excerpt}
             </ThemedText>
           )}
@@ -53,7 +60,8 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     gap: Spacing.three,
-    borderRadius: Spacing.three,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
     padding: Spacing.three,
     alignItems: 'center',
   },

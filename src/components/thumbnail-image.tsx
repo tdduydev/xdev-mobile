@@ -3,6 +3,7 @@ import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
+import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -15,6 +16,15 @@ type ThumbnailImageProps = {
    * present but fails to load, not the "no image" case.
    */
   uri: string;
+  /**
+   * The entry/series title, shown as an initial-letter monogram when `uri`
+   * fails to load (task-15 brief: a missing image should read as designed,
+   * not broken — the 47 pre-existing broken-image references in the blog
+   * content are a content problem this app doesn't fix, only render better).
+   * Optional so a caller with no natural title can still fall back to the
+   * old triangle-exclamation icon.
+   */
+  title?: string;
   style: StyleProp<ViewStyle>;
   contentFit?: ImageContentFit;
   transition?: number;
@@ -31,10 +41,11 @@ type ThumbnailImageProps = {
  * was worth improving regardless). `onError` (an ordinary event-callback
  * prop, not a `useEffect`) flips to the placeholder.
  */
-export function ThumbnailImage({ uri, style, contentFit = 'cover', transition }: ThumbnailImageProps) {
+export function ThumbnailImage({ uri, title, style, contentFit = 'cover', transition }: ThumbnailImageProps) {
   const [failed, setFailed] = useState(false);
   const theme = useTheme();
   const showPlaceholder = failed;
+  const initial = title?.trim().charAt(0).toUpperCase();
 
   return (
     <ThemedView type="backgroundElement" style={[style, styles.container]}>
@@ -47,7 +58,12 @@ export function ThumbnailImage({ uri, style, contentFit = 'cover', transition }:
           onError={() => setFailed(true)}
         />
       )}
-      {showPlaceholder && (
+      {showPlaceholder && initial && (
+        <ThemedText type="subtitle" themeColor="textSecondary">
+          {initial}
+        </ThemedText>
+      )}
+      {showPlaceholder && !initial && (
         <View style={styles.placeholderIcon}>
           <SymbolView
             name={{ ios: 'photo.trianglebadge.exclamationmark', android: 'image_not_supported', web: 'image_not_supported' }}
