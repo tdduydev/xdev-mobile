@@ -118,10 +118,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // the same user) doesn't repeat the merge/push on every render.
   const syncedUidRef = useRef<string | null>(null);
 
+  // `useIdTokenAuthRequest` is a hook — it must run on every render
+  // regardless of whether Google is configured, so it can't be called
+  // conditionally. [Measured live on Expo Go, iOS simulator, 2026-09-18]:
+  // passing `undefined` for the platform-relevant client id (iosClientId on
+  // iOS) throws synchronously during render — `expo-auth-session`'s own
+  // `invariantClientId` (providers/ProviderUtils.ts) does
+  // `if (typeof value === 'undefined') throw ...`, crashing this whole
+  // provider (and everything under it) before `isGoogleConfigured` ever
+  // gets a chance to hide the Settings button. The fallback string below
+  // satisfies that check (it only rejects literal `undefined`) without
+  // ever being used for a real request: `hasGoogleAuthConfig()` gates
+  // `promptGoogleAsync()`'s only call site (the Settings screen's Google
+  // button), so this placeholder client id is constructed into an auth
+  // request that is simply never prompted when unset.
   const [, googleResponse, promptGoogleAsync] = useIdTokenAuthRequest({
-    iosClientId: googleAuthConfig.iosClientId,
-    androidClientId: googleAuthConfig.androidClientId,
-    webClientId: googleAuthConfig.webClientId,
+    iosClientId: googleAuthConfig.iosClientId ?? 'unconfigured',
+    androidClientId: googleAuthConfig.androidClientId ?? 'unconfigured',
+    webClientId: googleAuthConfig.webClientId ?? 'unconfigured',
   });
 
   useEffect(() => {
