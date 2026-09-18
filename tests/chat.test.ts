@@ -114,18 +114,22 @@ describe("classifyGeminiError", () => {
     expect(classifyGeminiError(err)).toMatch(/máy chủ AI/);
   });
 
-  it("maps a 429 fetch-error to a quota-specific message", () => {
+  it("maps a 429 fetch-error to a quota message that says 'today', not a per-minute retry (task-16: the quota is 20/day/project, not a rate limit)", () => {
     const err = Object.assign(new Error("ai: Error fetching from https://x: [429 Too Many Requests] quota exceeded (ai/fetch-error)"), {
       code: "fetch-error",
     });
-    expect(classifyGeminiError(err)).toMatch(/vượt giới hạn/);
+    const message = classifyGeminiError(err);
+    expect(message).toMatch(/hôm nay/);
+    expect(message).not.toMatch(/ít phút/);
   });
 
-  it("maps a 403 fetch-error (quota/permission — the exact risk of shipping without App Check) to the same quota message", () => {
+  it("maps a 403 fetch-error (quota/permission — the exact risk of shipping without App Check) to the same daily-quota message", () => {
     const err = Object.assign(new Error("ai: Error fetching from https://x: [403 Forbidden] permission denied (ai/fetch-error)"), {
       code: "fetch-error",
     });
-    expect(classifyGeminiError(err)).toMatch(/vượt giới hạn/);
+    const message = classifyGeminiError(err);
+    expect(message).toMatch(/hôm nay/);
+    expect(message).not.toMatch(/ít phút/);
   });
 
   it("does not mis-fire the quota message on an unrelated status code containing similar digits", () => {

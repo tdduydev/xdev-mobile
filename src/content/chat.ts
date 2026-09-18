@@ -142,7 +142,16 @@ export function classifyGeminiError(error: unknown): string {
       // regex) reads as "403 or 428 or 429" in prose but only matches
       // 423/428/429, silently missing 403, the status this branch exists
       // for. See tests/chat.test.ts for a case per status.
-      return 'Đã vượt giới hạn sử dụng AI lúc này. Vui lòng thử lại sau ít phút.';
+      //
+      // Copy fixed task-16: this used to say "thử lại sau ít phút" (retry
+      // in a few minutes). Measured 2026-09-18 against the live 429 body —
+      // `xdev-asia`'s free-tier Gemini quota is
+      // `GenerateRequestsPerDayPerProjectPerModel-FreeTier`, value 20 —
+      // i.e. per DAY for the whole project, not a short per-minute rate
+      // limit. Telling someone to retry in a few minutes when the quota
+      // won't clear for hours is worse than saying nothing: they wait,
+      // retry, hit the same wall, and now trust the message less.
+      return 'Đã hết lượt hỏi AI cho hôm nay (quota dùng chung cho cả ứng dụng). Vui lòng quay lại vào ngày mai.';
     }
     return 'Không kết nối được tới máy chủ AI. Vui lòng thử lại sau.';
   }
