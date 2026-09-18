@@ -68,6 +68,11 @@ export default function SearchScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
+        // task-16 brief item B: the keyboard covered the tab bar with no way
+        // to dismiss it short of tapping a result. A "Cancel" button is one
+        // more control to place/localize; scrolling the list the user is
+        // already touching is free.
+        keyboardDismissMode="on-drag"
         renderItem={({ item }) => (
           <ThemedView style={styles.itemWrapper}>
             <EntryCard

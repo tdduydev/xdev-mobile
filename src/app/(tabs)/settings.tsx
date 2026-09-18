@@ -1,11 +1,11 @@
 import { AppleAuthenticationButton, AppleAuthenticationButtonStyle, AppleAuthenticationButtonType } from 'expo-apple-authentication';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LOCALES, type Locale } from '@/api/config';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/state/auth';
 import { useLocale } from '@/state/locale';
@@ -129,7 +129,14 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.flex} edges={['top']}>
-      <View style={styles.content}>
+      {/* Plain `View` had no way to reach content below the fold — on a
+          short screen (or with Dynamic Type bumped up) the "Dark" row in
+          APPEARANCE sat under the tab bar and was simply unreachable
+          (task-15 finding, task-16 brief item A). `contentContainerStyle`
+          keeps the existing centered/max-width layout; `BottomTabInset`
+          (not an arbitrary padding number) clears the tab bar the same way
+          other scrollable screens in this app already do. */}
+      <ScrollView contentContainerStyle={styles.content}>
         <ThemedText type="title" style={styles.heading}>
           Settings
         </ThemedText>
@@ -167,7 +174,7 @@ export default function SettingsScreen() {
             ))}
           </View>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -181,6 +188,7 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxContentWidth,
     paddingHorizontal: Spacing.three,
+    paddingBottom: BottomTabInset,
     gap: Spacing.five,
   },
   heading: {
