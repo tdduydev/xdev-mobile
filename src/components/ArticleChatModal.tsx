@@ -42,9 +42,11 @@ type ArticleChatModalProps = {
  *    what the web widget already uses too) with an explicit "AI đang trả
  *    lời..." state instead, per the brief's fallback clause.
  *
- * Rendered by `post/[slug].tsx` keyed on `entry.id`, so navigating to a
- * neighboring lesson (`router.replace`, same screen instance reused) gets
- * a fresh conversation instead of silently carrying the old article's chat
+ * Rendered by `post/[slug].tsx` keyed on `` `chat-${entry.id}` `` (not
+ * bare `entry.id` — that's `ArticleWebView`'s key, and siblings need
+ * distinct keys, see that file's comment), so navigating to a neighboring
+ * lesson (`router.replace`, same screen instance reused) gets a fresh
+ * conversation instead of silently carrying the old article's chat
  * history into the new one.
  */
 export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: ArticleChatModalProps) {
