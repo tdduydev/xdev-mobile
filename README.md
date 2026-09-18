@@ -53,6 +53,32 @@ cần rời Expo Go (App Attest / Play Integrity chỉ có ở
 chưa bật ở phía project. Việc bật App Check là Task 14b, làm gần lúc phát
 hành. Đừng tưởng chat này đã được bảo vệ quota chỉ vì nó chạy được.
 
+**⚠️ Chat KHÔNG chạy được trong Expo Go.** Đo ngày 2026-09-18 trên iPhone 16 Pro
+simulator: mọi request tới `firebasevertexai.googleapis.com` từ trong Expo Go đều
+hỏng ở tầng vận chuyển với `UnexpectedException: cannot parse response (at
+ExpoModulesCore/Promise.swift:56)`, đôi khi là `The network connection was lost`.
+
+Đây KHÔNG phải lỗi code, config, API key hay mạng. Bằng chứng, tất cả đo trên
+cùng một máy và cùng một simulator:
+
+| cách gọi | tới `firebasevertexai.googleapis.com` |
+|---|---|
+| `curl` từ máy chủ, cùng apiKey và project | ✅ Gemini trả lời bình thường |
+| Safari **bên trong simulator** | ✅ phản hồi HTTP bình thường (400 cho GET trần) |
+| `fetch()` trong Expo Go | ❌ `cannot parse response` |
+| `XMLHttpRequest` trong Expo Go | ❌ `onerror` |
+| `fetch()` trong Expo Go → `www.googleapis.com` | ✅ 200 |
+| `fetch()` trong Expo Go → `blog.xdev.asia` | ✅ 200 |
+
+Tức là Expo Go ra Internet được, ra googleapis.com được, chỉ riêng host này thì
+không. Cả `fetch` lẫn `XHR` cùng chết nên không lách được bằng cách đổi thư viện
+HTTP.
+
+Hệ quả: **phần chat chỉ kiểm chứng được trên development build hoặc máy thật.**
+Code và test đã sẵn sàng (xem `tests/chat.test.ts`), nhưng đừng kết luận chat
+hỏng khi thấy nó báo lỗi trong Expo Go — hãy dựng development build rồi thử lại.
+Nếu trên development build vẫn hỏng thì lúc đó mới là lỗi thật.
+
 ## Kiểm tra
 
 ```bash
