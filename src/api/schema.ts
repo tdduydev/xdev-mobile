@@ -48,12 +48,21 @@ const indexEntryShape = {
   excerpt: z.string(),
   featuredImage: nullableImage,
   readingTime: z.number().int().nonnegative(),
-  // Measured live 2026-09-18: the key is entirely ABSENT (not null) on 10 ja
-  // lessons and 30 zh-tw lessons — legacy content the API never backfilled a
-  // publish date for. Not in the brief's field-rule table; found by fetching
-  // ja/zh-tw directly. `.optional()`, not `.nullable()`, matches what was
-  // actually observed (a missing key, never an explicit null).
-  publishedAt: z.string().optional(),
+  // Measured live 2026-09-18, morning: the key was entirely ABSENT (not
+  // null) on 10 ja lessons and 30 zh-tw lessons — legacy content the API
+  // never backfilled a publish date for; Task 2 reported this as a producer
+  // bug (it violates the API's own documented "every field present, null
+  // when absent" rule) and a fix was dispatched blog-side.
+  //
+  // Re-measured live 2026-09-18, later the same day (Task 3): the blog-side
+  // fix landed — `ja`'s 10 affected entries now carry `publishedAt: null`
+  // instead of omitting the key (verified directly via
+  // `GET {API_BASE}/ja/index.json`: 1451/1451 entries have the key present,
+  // 10 with an explicit `null`). `.nullish()` (both `.optional()` AND
+  // `.nullable()`) accepts either representation, so this schema tolerates
+  // both the now-fixed shape and the original bug without another
+  // same-day edit if it reappears.
+  publishedAt: z.string().nullish(),
   author: AuthorSchema.nullable(),
   tags: z.array(z.string().min(1)),
   category: CategorySchema.nullable(),
@@ -108,10 +117,14 @@ export const SeriesSchema = z.object({
   title: z.string().min(1),
   description: z.string(),
   featuredImage: nullableImage,
-  // Measured live 2026-09-18: both keys are entirely ABSENT (not null) on 1
-  // ja series and 2 zh-tw series — same shape of gap as `publishedAt` above.
-  level: z.enum(["beginner", "intermediate", "advanced"]).optional(),
-  lessonCount: z.number().int().nonnegative().optional(),
+  // Same fix/re-measurement history as `publishedAt` above: both keys were
+  // entirely ABSENT on 1 ja series and 2 zh-tw series when Task 2 measured
+  // this (2026-09-18, morning); re-measured later the same day (Task 3),
+  // the blog-side fix landed and the affected series now carry explicit
+  // `null` for both fields instead of omitting them. `.nullish()` tolerates
+  // either representation.
+  level: z.enum(["beginner", "intermediate", "advanced"]).nullish(),
+  lessonCount: z.number().int().nonnegative().nullish(),
   category: CategorySchema.nullable(),
   url: z.url(),
   chapters: z.array(seriesChapterShape),

@@ -74,23 +74,30 @@ describe("contract: index", () => {
     TIMEOUT,
   );
 
-  // Measured 2026-09-18: `publishedAt` is entirely ABSENT (not null) on 10
-  // `ja` lessons and 30 `zh-tw` lessons — legacy content the API never
-  // backfilled a date for. This is not in the brief's field-rule table; it
-  // was found by fetching the live data. Guards schema.ts's `.optional()`
-  // the same way the test above guards the nullable branches. Reads the raw
-  // JSON directly (rather than through fetchIndex) because the whole point
-  // is to see the key is ABSENT, before zod's optional-with-default masks it.
+  // Measured 2026-09-18 morning (Task 2): `publishedAt` was entirely ABSENT
+  // (not null) on 10 `ja` lessons and 30 `zh-tw` lessons — legacy content
+  // the API never backfilled a date for. Reported as a producer bug; a fix
+  // was dispatched blog-side.
+  //
+  // Re-measured 2026-09-18, later the same day (Task 3): the fix landed —
+  // the key is now present on every entry, with an explicit `null` on the
+  // affected ones, matching the API's own documented "always present,
+  // explicit null when absent" invariant. This test now guards THAT shape
+  // (schema.ts: `.nullish()`, so either representation still parses) rather
+  // than the old bug's shape — reading the raw JSON directly still matters,
+  // to see the true value before zod's `.nullish()` could mask a
+  // regression back to "key absent" going unnoticed either way.
   it(
-    "ja genuinely still has an entry with publishedAt entirely absent",
+    "ja genuinely still has an entry with publishedAt explicitly null",
     async () => {
       const res = await fetch(`${API_BASE}/ja/index.json`);
       const body = (await res.json()) as Array<Record<string, unknown>>;
-      const missing = body.filter((e) => !("publishedAt" in e));
-      expect(missing.length).toBeGreaterThan(0);
+      expect(body.every((e) => "publishedAt" in e)).toBe(true);
+      const nullValued = body.filter((e) => e.publishedAt === null);
+      expect(nullValued.length).toBeGreaterThan(0);
 
       const parsed = await fetchIndex("ja");
-      expect(parsed.some((e) => e.publishedAt === undefined)).toBe(true);
+      expect(parsed.some((e) => e.publishedAt === null)).toBe(true);
     },
     TIMEOUT,
   );
@@ -157,19 +164,28 @@ describe("contract: series", () => {
     TIMEOUT,
   );
 
-  // Measured 2026-09-18: `level`, `lessonCount` and `category` can each be
-  // absent/null on a handful of ja/zh-tw series — same shape of gap as the
-  // index entries above, guarded the same way.
+  // Measured 2026-09-18 morning (Task 2): `level` and `lessonCount` were
+  // entirely ABSENT on a handful of ja/zh-tw series — same shape of gap as
+  // `publishedAt` above, and reported alongside it.
+  //
+  // Re-measured 2026-09-18, later the same day (Task 3): same fix, same
+  // result — the keys are now always present, explicit `null` on the
+  // affected series (schema.ts: `.nullish()` on both). `category`'s
+  // nullability is unrelated to that bug (schema.ts always had it
+  // `.nullable()`) and still holds.
   it(
-    "ja genuinely still has a series missing level/lessonCount and one with a null category",
+    "ja genuinely still has a series with level/lessonCount explicitly null, and one with a null category",
     async () => {
       const res = await fetch(`${API_BASE}/ja/series.json`);
       const body = (await res.json()) as Array<Record<string, unknown>>;
-      expect(body.some((s) => !("level" in s))).toBe(true);
-      expect(body.some((s) => !("lessonCount" in s))).toBe(true);
+      expect(body.every((s) => "level" in s)).toBe(true);
+      expect(body.every((s) => "lessonCount" in s)).toBe(true);
+      expect(body.some((s) => s.level === null)).toBe(true);
+      expect(body.some((s) => s.lessonCount === null)).toBe(true);
 
       const parsed = await fetchSeriesList("ja");
       expect(parsed.some((s) => s.category === null)).toBe(true);
+      expect(parsed.some((s) => s.level === null)).toBe(true);
     },
     TIMEOUT,
   );
