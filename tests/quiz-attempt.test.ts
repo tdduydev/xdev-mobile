@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createAttempt,
+  formatRemaining,
   goToQuestion,
   isExpired,
   remainingSeconds,
@@ -107,6 +108,28 @@ describe("setAnswer", () => {
     const first = setAnswer(attempt, 1, 0);
     const second = setAnswer(first, 1, 1);
     expect(second.answers).toEqual([null, 1]);
+  });
+});
+
+describe("formatRemaining", () => {
+  it("formats under an hour as M:SS", () => {
+    expect(formatRemaining(29 * 60 + 5)).toBe("29:05");
+    expect(formatRemaining(5)).toBe("0:05");
+  });
+
+  // aws-ml-specialty's duration_minutes is 180 (3 hours) — a countdown
+  // formatted as bare minutes:seconds would show "180:00", technically
+  // correct but not how anyone reads a 3-hour exam clock. Every quiz whose
+  // duration is under an hour must NOT get this treatment (see the M:SS
+  // case above) — only durations that actually reach an hour do.
+  it("formats an hour or more as H:MM:SS, for durations up to aws-ml-specialty's 180 minutes", () => {
+    expect(formatRemaining(60 * 60)).toBe("1:00:00");
+    expect(formatRemaining(3 * 60 * 60 - 1)).toBe("2:59:59");
+    expect(formatRemaining(3 * 60 * 60)).toBe("3:00:00");
+  });
+
+  it("never renders negative time", () => {
+    expect(formatRemaining(0)).toBe("0:00");
   });
 });
 

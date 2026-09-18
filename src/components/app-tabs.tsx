@@ -22,6 +22,11 @@ export default function AppTabs() {
         <NativeTabs.Trigger.Icon sf="books.vertical.fill" md="auto_stories" />
       </NativeTabs.Trigger>
 
+      <NativeTabs.Trigger name="quizzes">
+        <NativeTabs.Trigger.Label>Quizzes</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="checkmark.seal.fill" md="quiz" />
+      </NativeTabs.Trigger>
+
       <NativeTabs.Trigger name="search">
         <NativeTabs.Trigger.Label>Search</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />

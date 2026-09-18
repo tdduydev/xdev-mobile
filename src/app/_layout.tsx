@@ -23,6 +23,13 @@ function RootNavigation() {
             headerTitle: '',
           }}
         />
+        <Stack.Screen
+          name="quiz/[slug]"
+          options={{
+            headerShown: true,
+            headerTitle: '',
+          }}
+        />
       </Stack>
     </ThemeProvider>
   );

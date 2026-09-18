@@ -42,6 +42,26 @@ export function remainingSeconds(attempt: QuizAttemptState, now: number): number
   return Math.max(0, Math.ceil((attempt.deadlineMs - now) / 1000));
 }
 
+/**
+ * Formats a non-negative second count as `M:SS`, or `H:MM:SS` once it
+ * reaches an hour. Plain minutes:seconds alone would show aws-ml-specialty's
+ * full 180-minute duration as "180:00" — technically correct, not how a
+ * 3-hour exam clock is read — but forcing H:MM:SS unconditionally would
+ * make every OTHER quiz (all <= 45 minutes today) show a needless leading
+ * "0:" before the minutes.
+ */
+export function formatRemaining(totalSeconds: number): string {
+  const clamped = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(clamped / 3600);
+  const minutes = Math.floor((clamped % 3600) / 60);
+  const seconds = clamped % 60;
+  const paddedSeconds = seconds.toString().padStart(2, "0");
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${paddedSeconds}`;
+  }
+  return `${minutes}:${paddedSeconds}`;
+}
+
 /** Pure update — returns a new attempt, never mutates `attempt.answers` in place. */
 export function setAnswer(attempt: QuizAttemptState, questionIndex: number, optionIndex: number): QuizAttemptState {
   const answers = [...attempt.answers];
