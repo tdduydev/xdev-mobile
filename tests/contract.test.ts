@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { API_BASE, LOCALES } from "../src/api/config";
 import { fetchIndex, fetchManifest, fetchSeriesList, fetchTaxonomy } from "../src/api/client";
+import type { IndexEntry } from "../src/api/schema";
 
 // This suite hits the LIVE Content API (https://blog.xdev.asia/api/v1) on
 // purpose. The API lives in a different repository and can change shape
@@ -13,6 +14,18 @@ function sample<T>(items: readonly T[], count: number): T[] {
   if (items.length <= count) return [...items];
   const step = items.length / count;
   return Array.from({ length: count }, (_, i) => items[Math.floor(i * step)]);
+}
+
+// `index.json` is type-clustered (all `blog` entries, then all `lesson`
+// entries) — an evenly-spaced `sample()` over the whole array can land
+// entirely inside one type, leaving the other type's structurally different
+// `path` shape (blog: `content/blog/...`; lesson:
+// `content/series/.../chapters/.../lessons/....md`) completely untested.
+// Sample within each type instead.
+function sampleByType(index: readonly IndexEntry[], perType: number): IndexEntry[] {
+  const blogs = index.filter((e) => e.type === "blog");
+  const lessons = index.filter((e) => e.type === "lesson");
+  return [...sample(blogs, perType), ...sample(lessons, perType)];
 }
 
 describe("contract: manifest", () => {
@@ -83,10 +96,13 @@ describe("contract: index", () => {
   );
 
   it(
-    "every path fetches over HTTP",
+    "every path fetches over HTTP (both blog and lesson path shapes)",
     async () => {
       const index = await fetchIndex("vi");
-      for (const entry of sample(index, 20)) {
+      const sampled = sampleByType(index, 10);
+      expect(sampled.some((e) => e.type === "blog")).toBe(true);
+      expect(sampled.some((e) => e.type === "lesson")).toBe(true);
+      for (const entry of sampled) {
         const head = await fetch(`${API_BASE}/${entry.path}`, { method: "HEAD" });
         expect(head.status).toBe(200);
       }
@@ -95,21 +111,36 @@ describe("contract: index", () => {
   );
 
   // GitHub Pages only gzips when the client sends Accept-Encoding: gzip.
-  // vi/index.json measured 2026-09-18: 2.07 MB raw, 283 KB gzipped. This is a
-  // raw `fetch` (not fetchIndex, which only returns parsed data) because
-  // response headers are what's under test: it measures the actual wire
-  // bytes for the exact request client.ts makes (plain `fetch(url)`, no
-  // custom headers) rather than assuming the runtime negotiates compression.
+  // vi/index.json measured 2026-09-18: 2.07 MB raw, 283 KB gzipped (~7x).
+  // These are raw `fetch` calls (not fetchIndex, which only returns parsed
+  // data) because response headers/bytes are what's under test: it measures
+  // the actual wire bytes for the exact request client.ts makes (plain
+  // `fetch(url)`, no custom headers) rather than assuming the runtime
+  // negotiates compression.
+  //
+  // The ratio (not an absolute byte ceiling) is asserted deliberately: `vi`
+  // has 130 posts and 1,525 lessons today and the content grows continuously
+  // in the blog repo. This suite runs on a daily CI cron — an absolute
+  // ceiling close to today's measurement would eventually go red from
+  // content growth, not from a real contract break, training people to
+  // ignore the tripwire. `content-encoding: gzip` is the real signal; the
+  // ratio check confirms compression is providing an actual order-of-
+  // magnitude benefit rather than being silently disabled.
   it(
     "vi/index.json is actually transferred gzip-compressed",
     async () => {
-      const res = await fetch(`${API_BASE}/vi/index.json`);
-      expect(res.status).toBe(200);
-      expect(res.headers.get("content-encoding")).toBe("gzip");
-      const transferredBytes = Number(res.headers.get("content-length"));
-      expect(transferredBytes).toBeGreaterThan(0);
-      // Comfortably above the measured 283 KB and comfortably below the 2.07 MB raw size.
-      expect(transferredBytes).toBeLessThan(500_000);
+      const compressed = await fetch(`${API_BASE}/vi/index.json`);
+      expect(compressed.status).toBe(200);
+      expect(compressed.headers.get("content-encoding")).toBe("gzip");
+      const compressedBytes = Number(compressed.headers.get("content-length"));
+      expect(compressedBytes).toBeGreaterThan(0);
+
+      const raw = await fetch(`${API_BASE}/vi/index.json`, {
+        headers: { "Accept-Encoding": "identity" },
+      });
+      const rawBytes = (await raw.arrayBuffer()).byteLength;
+
+      expect(compressedBytes).toBeLessThan(rawBytes / 3);
     },
     TIMEOUT,
   );
