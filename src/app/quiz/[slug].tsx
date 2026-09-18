@@ -9,7 +9,8 @@ import type { QuizAttemptState, QuizDetail } from '@/api/schema';
 import { EmptyState } from '@/components/empty-state';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import {
   createAttempt,
   formatRemaining,
@@ -52,6 +53,7 @@ type QuizDetailSnapshot = {
 
 export default function QuizScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
+  const theme = useTheme();
 
   const [snapshot, setSnapshot] = useState<QuizDetailSnapshot | null>(null);
   const [attempt, setAttempt] = useState<QuizAttemptState | null>(null);
@@ -236,10 +238,25 @@ export default function QuizScreen() {
             contentContainerStyle={styles.resultList}
             ListHeaderComponent={
               <View style={styles.resultHeader}>
+                {/* Score at the `display` scale (28pt, same tier as a screen
+                    title) — previously read fine on its own, but sat next to
+                    a 22pt `subtitle` sentence that ran the pass/fail verdict,
+                    the fraction, and the passing bar into one three-line run.
+                    Splitting the verdict into its own chip lets the rest drop
+                    to `default` (15pt), which is what actually fixed the
+                    wrapping. */}
                 <ThemedText type="title">{result.scorePercent}%</ThemedText>
-                <ThemedText type="subtitle">
-                  {result.passed ? 'Đạt' : 'Chưa đạt'} — {result.correctCount}/{result.totalCount} câu đúng (cần đạt{' '}
-                  {quiz.passing_score}%)
+                <View
+                  style={[
+                    styles.resultChip,
+                    { backgroundColor: result.passed ? theme.successSoft : theme.dangerSoft },
+                  ]}>
+                  <ThemedText type="bodyStrong" themeColor={result.passed ? 'success' : 'danger'}>
+                    {result.passed ? 'Đạt' : 'Chưa đạt'}
+                  </ThemedText>
+                </View>
+                <ThemedText type="default" themeColor="textSecondary">
+                  {result.correctCount}/{result.totalCount} câu đúng (cần đạt {quiz.passing_score}%)
                 </ThemedText>
                 {domainBreakdown.length > 0 && (
                   <View style={styles.domainList}>
@@ -251,11 +268,11 @@ export default function QuizScreen() {
                   </View>
                 )}
                 <Pressable onPress={retake} style={({ pressed }) => pressed && styles.pressed}>
-                  <ThemedView type="backgroundElement" style={styles.retakeButton}>
+                  <ThemedView type="backgroundElement" style={[styles.retakeButton, { borderColor: theme.border }]}>
                     <ThemedText type="smallBold">Làm lại</ThemedText>
                   </ThemedView>
                 </Pressable>
-                <ThemedText type="smallBold" style={styles.reviewHeading}>
+                <ThemedText type="cardTitle" style={styles.reviewHeading}>
                   Xem lại
                 </ThemedText>
               </View>
@@ -264,21 +281,26 @@ export default function QuizScreen() {
               const question = quiz.questions[item.questionIndex];
               return (
                 <ThemedView type="backgroundElement" style={styles.reviewCard}>
-                  <ThemedText type="smallBold">
+                  <ThemedText type="cardTitle">
                     {item.questionIndex + 1}. {question.question}
                   </ThemedText>
                   {question.options.map((option, optionIndex) => {
                     const isYourAnswer = item.selected === optionIndex;
                     const isCorrectAnswer = question.correct === optionIndex;
+                    // Right answer always outlined in `success`; the user's
+                    // own pick outlined in `danger` ONLY when it was wrong —
+                    // when they picked correctly there is just the one green
+                    // outline, not a second overlapping ring.
+                    const borderColor = isCorrectAnswer ? theme.success : isYourAnswer ? theme.danger : theme.borderSubtle;
                     return (
-                      <ThemedText
-                        key={optionIndex}
-                        type={isCorrectAnswer || isYourAnswer ? 'smallBold' : 'small'}
-                        themeColor={isCorrectAnswer || isYourAnswer ? undefined : 'textSecondary'}
-                        style={styles.reviewOption}>
-                        {isCorrectAnswer ? '✓ ' : isYourAnswer ? '✗ ' : '   '}
-                        {option}
-                      </ThemedText>
+                      <View key={optionIndex} style={[styles.reviewOptionBox, { borderColor }]}>
+                        <ThemedText
+                          type={isCorrectAnswer || isYourAnswer ? 'bodyStrong' : 'default'}
+                          themeColor={isCorrectAnswer || isYourAnswer ? undefined : 'textSecondary'}>
+                          {isCorrectAnswer ? '✓ ' : isYourAnswer ? '✗ ' : ''}
+                          {option}
+                        </ThemedText>
+                      </View>
                     );
                   })}
                   {item.selected === null && (
@@ -286,7 +308,7 @@ export default function QuizScreen() {
                       Bạn chưa trả lời câu này.
                     </ThemedText>
                   )}
-                  <ThemedText type="small" themeColor="textSecondary" style={styles.explanation}>
+                  <ThemedText type="default" themeColor="textSecondary" style={styles.explanation}>
                     {question.explanation}
                   </ThemedText>
                 </ThemedView>
@@ -312,20 +334,55 @@ export default function QuizScreen() {
           </ThemedText>
           <ThemedText type="smallBold">{formatRemaining(remainingSeconds(attempt, now))}</ThemedText>
         </View>
+        <View style={[styles.progressTrack, { backgroundColor: theme.borderSubtle }]}>
+          <View
+            style={[
+              styles.progressFill,
+              { backgroundColor: theme.brand, width: `${((attempt.currentIndex + 1) / totalQuestions) * 100}%` },
+            ]}
+          />
+        </View>
         <ScrollView contentContainerStyle={styles.questionScroll}>
           <ThemedText type="subtitle" style={styles.questionText}>
             {currentQuestion.question}
           </ThemedText>
           {currentQuestion.options.map((option, optionIndex) => {
             const isSelected = selected === optionIndex;
+            // A/B/C/D so a reviewer can say "câu B" out loud — plain grey
+            // rectangles with no label were the reported bug (brief item 3).
+            const letter = String.fromCharCode(65 + optionIndex);
             return (
               <Pressable
                 key={optionIndex}
                 onPress={() => selectOption(optionIndex)}
                 style={({ pressed }) => [styles.optionRow, pressed && styles.pressed]}>
-                <ThemedView type={isSelected ? 'backgroundSelected' : 'backgroundElement'} style={styles.optionInner}>
-                  <ThemedText type={isSelected ? 'smallBold' : 'small'}>{option}</ThemedText>
-                </ThemedView>
+                <View
+                  style={[
+                    styles.optionInner,
+                    { borderColor: isSelected ? theme.brandBorder : theme.border, backgroundColor: isSelected ? theme.brandSoft : theme.background },
+                  ]}>
+                  <View
+                    style={[
+                      styles.optionLetter,
+                      { borderColor: isSelected ? theme.brand : theme.border, backgroundColor: isSelected ? theme.brand : 'transparent' },
+                    ]}>
+                    {/* `theme.background` as the letter's ink: on the brand
+                        fill this is white-on-blue in light mode and
+                        near-black-on-light-blue in dark mode — deliberately
+                        reusing an existing token instead of a hardcoded
+                        white, since brand's lightness flips between themes
+                        (see theme.ts's dark-mode brand comment). */}
+                    <ThemedText
+                      type="bodyStrong"
+                      themeColor={isSelected ? undefined : 'textSecondary'}
+                      style={isSelected ? { color: theme.background } : undefined}>
+                      {letter}
+                    </ThemedText>
+                  </View>
+                  <ThemedText type="default" style={styles.optionText}>
+                    {option}
+                  </ThemedText>
+                </View>
               </Pressable>
             );
           })}
@@ -372,6 +429,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingTop: Spacing.two,
   },
+  // A visual "Câu 1/15" — the row above was numbers-only, no sense of how
+  // much of the exam was left at a glance.
+  progressTrack: {
+    height: 4,
+    borderRadius: Radius.pill,
+    marginHorizontal: Spacing.three,
+    marginTop: Spacing.two,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: Radius.pill,
+  },
   questionScroll: {
     padding: Spacing.three,
     gap: Spacing.two,
@@ -383,8 +453,26 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
   },
   optionInner: {
-    borderRadius: Spacing.three,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
     padding: Spacing.three,
+    minHeight: TouchTarget,
+  },
+  // The A/B/C/D badge — plain identical grey rectangles with no label were
+  // the reported bug ("nhìn không ra là bấm được", "khó nói câu B").
+  optionLetter: {
+    width: 28,
+    height: 28,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionText: {
+    flex: 1,
   },
   navRow: {
     flexDirection: 'row',
@@ -399,6 +487,8 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.three,
     paddingVertical: Spacing.two,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: TouchTarget,
   },
   pressed: {
     opacity: 0.7,
@@ -411,14 +501,23 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingBottom: Spacing.three,
   },
+  resultChip: {
+    alignSelf: 'flex-start',
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
+  },
   domainList: {
     gap: Spacing.half,
   },
   retakeButton: {
     alignSelf: 'flex-start',
     borderRadius: Spacing.five,
+    borderWidth: 1,
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.two,
+    minHeight: TouchTarget,
+    justifyContent: 'center',
   },
   reviewHeading: {
     marginTop: Spacing.two,
@@ -431,6 +530,13 @@ const styles = StyleSheet.create({
   },
   reviewOption: {
     paddingLeft: Spacing.one,
+  },
+  // Each option in the review gets its own outline (success/danger/subtle)
+  // instead of the old plain-text ✓/✗ prefix with no color at all.
+  reviewOptionBox: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    padding: Spacing.two,
   },
   explanation: {
     marginTop: Spacing.one,
