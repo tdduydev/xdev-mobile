@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { API_BASE, LOCALES } from "../src/api/config";
-import { fetchIndex, fetchManifest, fetchSeriesList, fetchTaxonomy } from "../src/api/client";
+import { fetchIndex, fetchManifest, fetchQuiz, fetchQuizzes, fetchSeriesList, fetchTaxonomy } from "../src/api/client";
 import type { IndexEntry } from "../src/api/schema";
 
 // This suite hits the LIVE Content API (https://blog.xdev.asia/api/v1) on
@@ -199,6 +199,68 @@ describe("contract: taxonomy", () => {
       expect(taxonomy.categories.length).toBeGreaterThan(0);
       expect(taxonomy.tags.length).toBeGreaterThan(0);
       expect(taxonomy.authors.length).toBeGreaterThan(0);
+    },
+    TIMEOUT,
+  );
+});
+
+// Task 12: quiz endpoints, added to the Content API alongside this task.
+// Deployed to production mid-task (2026-09-18) — this repo measured them
+// first against a local pre-deploy static build (see task-12-report.md) and
+// re-confirmed identical shapes once `blog.xdev.asia` itself went live, so
+// this tripwire runs against the real, deployed API like every other
+// `describe("contract: …")` block above, not a fixture.
+describe("contract: quizzes", () => {
+  it(
+    "fetchQuizzes() matches QuizListSchema and has no questions/domains (list-only fields)",
+    async () => {
+      const quizzes = await fetchQuizzes();
+      expect(quizzes.length).toBeGreaterThan(0);
+      for (const quiz of quizzes) {
+        expect(quiz).not.toHaveProperty("questions");
+        expect(quiz).not.toHaveProperty("domains");
+      }
+    },
+    TIMEOUT,
+  );
+
+  // `passing_score` is measured NOT to be a single constant across quizzes
+  // (66, 70, 75 all seen live 2026-09-18) — this guards against a future
+  // regression to "every quiz passes at 70%" going unnoticed, since that
+  // would still make every individual `fetchQuizzes()` call above pass.
+  it(
+    "passing_score genuinely varies across quizzes, not a single hardcoded value",
+    async () => {
+      const quizzes = await fetchQuizzes();
+      const passingScores = new Set(quizzes.map((quiz) => quiz.passing_score));
+      expect(passingScores.size).toBeGreaterThan(1);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "fetchQuiz(slug) matches QuizDetailSchema for every quiz in the list, and questions_count matches the actual array length",
+    async () => {
+      const quizzes = await fetchQuizzes();
+      for (const summary of quizzes) {
+        const detail = await fetchQuiz(summary.slug);
+        expect(detail.questions.length).toBe(summary.questions_count);
+      }
+    },
+    TIMEOUT,
+  );
+
+  // aws-ml-specialty's `domains: null` was measured live pre-deploy
+  // (task-12-report.md) — this guards that the deployed API still has at
+  // least one quiz exercising the nullable branch, the same way the index
+  // suite above guards `ja`'s null-author entry.
+  it(
+    "aws-ml-specialty genuinely still has domains: null, and its own questions_count is 15",
+    async () => {
+      const detail = await fetchQuiz("aws-ml-specialty");
+      expect(detail.domains).toBeNull();
+      expect(detail.questions).toHaveLength(15);
+      expect(detail.questions.every((q) => q.domain === null)).toBe(true);
     },
     TIMEOUT,
   );

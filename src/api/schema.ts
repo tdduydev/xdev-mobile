@@ -140,3 +140,114 @@ export const TaxonomySchema = z.object({
   authors: z.array(AuthorSchema),
 });
 export type Taxonomy = z.infer<typeof TaxonomySchema>;
+
+/**
+ * Shared by `GET /quizzes.json` (list) and `GET /quiz/{slug}.json` (detail,
+ * which adds `domains`/`questions` on top — see `QuizDetailSchema` below).
+ * Measured live 2026-09-18 against the pre-deploy build served from
+ * `/Users/joinytran/Data/Work/xDev/blog/blog.xdev.asia/out` (production
+ * `blog.xdev.asia/api/v1/quizzes.json` still 404s at the time this was
+ * written — see task-12-report.md): 7 quizzes, 165 questions total
+ * (gcp-ml-engineer 50, aws-ml-specialty 15, the other five 20 each).
+ */
+const quizSummaryShape = {
+  id: z.string().min(1),
+  slug: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string(),
+  // A lucide icon NAME ("award", "gpu" both measured live), never an image
+  // path. This app has no lucide renderer — only `expo-symbols` (SF
+  // Symbols) is installed (checked node_modules directly) — so the value is
+  // parsed and kept for forward compatibility but not rendered anywhere;
+  // mapping two observed names to SF Symbols would be a fragile lookup for
+  // the (unknown) rest of the set, and it isn't in the brief's required
+  // list ("tiêu đề, số câu, thời lượng, điểm đạt").
+  icon: z.string().min(1),
+  provider: z.string().min(1),
+  // Free-form per provider ("Foundational", "Chuyên gia", "Professional",
+  // "Intermediate" all measured live) — unlike `Series.level` above, this is
+  // NOT the closed beginner/intermediate/advanced enum, so it stays a plain
+  // string rather than reusing that type.
+  level: z.string().min(1),
+  duration_minutes: z.number().int().positive(),
+  // 0–100, per the brief's own contract comment.
+  passing_score: z.number().int().min(0).max(100),
+  questions_count: z.number().int().positive(),
+  tags: z.array(z.string().min(1)),
+  series_slug: z.string().min(1).nullable(),
+  url: z.url(),
+};
+
+export const QuizSummarySchema = z.object(quizSummaryShape);
+export type QuizSummary = z.infer<typeof QuizSummarySchema>;
+
+export const QuizListSchema = z.array(QuizSummarySchema);
+
+const QuizLessonRefSchema = z.object({
+  title: z.string().min(1),
+  slug: z.string().min(1),
+});
+
+export const QuizDomainSchema = z.object({
+  name: z.string().min(1),
+  weight: z.number().nullable(),
+  lessons: z.array(QuizLessonRefSchema),
+});
+export type QuizDomain = z.infer<typeof QuizDomainSchema>;
+
+export const QuizQuestionSchema = z.object({
+  id: z.number().int(),
+  question: z.string().min(1),
+  options: z.array(z.string().min(1)).min(2),
+  // The INDEX into `options` (0-based), never the option text. Measured
+  // live: aws-ml-specialty's question 1 has `correct: 1`, selecting "Random
+  // Cut Forest" by POSITION — "Random Cut Forest" itself is never compared
+  // against. Scoring (src/content/quiz-scoring.ts) must compare indices
+  // only, never option content, or an off-by-one on this field.
+  correct: z.number().int().nonnegative(),
+  explanation: z.string(),
+  domain: z.string().nullable(),
+});
+export type QuizQuestion = z.infer<typeof QuizQuestionSchema>;
+
+/**
+ * `GET /quiz/{slug}.json`. `domains` is `null` for real on aws-ml-specialty
+ * (measured live, not a defensive guess) — and every one of its 15
+ * questions also has `domain: null`, so a null `domains` array and "no
+ * question carries a domain" were observed to go together on the one quiz
+ * that does this.
+ */
+export const QuizDetailSchema = z.object({
+  ...quizSummaryShape,
+  domains: z.array(QuizDomainSchema).nullable(),
+  questions: z.array(QuizQuestionSchema).min(1),
+});
+export type QuizDetail = z.infer<typeof QuizDetailSchema>;
+
+/**
+ * Local resume-state for an in-progress quiz attempt — NOT part of the
+ * Content API's wire contract (quizzes aren't versioned or partitioned by
+ * locale — see cache.ts). Kept here anyway because every other JSON blob
+ * this app round-trips through on-device storage is validated with a
+ * schema from this file (e.g. `IndexSchema.parse(JSON.parse(...))` in
+ * cache.ts) before being trusted; a corrupted or old-shape attempt should
+ * fail closed (discard, start the quiz over) rather than crash the quiz
+ * screen or index into the wrong question.
+ */
+export const QuizAttemptStateSchema = z.object({
+  slug: z.string().min(1),
+  // `null` = unanswered. Never a sentinel like `-1`: scoring compares
+  // `answers[i] === question.correct` by strict equality, and `correct` is
+  // always `>= 0`, so `null` can never be mistaken for a real option index
+  // — including index `0` — without any separate "has been answered" check.
+  answers: z.array(z.number().int().nonnegative().nullable()),
+  currentIndex: z.number().int().nonnegative(),
+  // Absolute epoch ms, computed once at attempt creation as
+  // `now + duration_minutes * 60_000` and never updated afterwards — the
+  // countdown is derived from wall-clock time on every render
+  // (`now >= deadlineMs`) instead of a remaining-seconds counter that would
+  // drift while the app is backgrounded, or reset if the process is killed
+  // and relaunched mid-exam.
+  deadlineMs: z.number().int().positive(),
+});
+export type QuizAttemptState = z.infer<typeof QuizAttemptStateSchema>;

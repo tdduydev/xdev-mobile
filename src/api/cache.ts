@@ -1,8 +1,17 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Directory, File, Paths } from "expo-file-system";
 import type { Locale } from "./config";
-import { fetchIndex, fetchMarkdown } from "./client";
-import { IndexSchema, type IndexEntry } from "./schema";
+import { fetchIndex, fetchMarkdown, fetchQuiz, fetchQuizzes } from "./client";
+import {
+  IndexSchema,
+  QuizAttemptStateSchema,
+  QuizDetailSchema,
+  QuizListSchema,
+  type IndexEntry,
+  type QuizAttemptState,
+  type QuizDetail,
+  type QuizSummary,
+} from "./schema";
 
 const MANIFEST_VERSION_KEY = "xdev:manifestVersion";
 
@@ -172,4 +181,101 @@ export async function getCachedMarkdown(path: string): Promise<string> {
   file.create({ overwrite: true });
   file.write(content);
   return content;
+}
+
+// Quizzes are NOT partitioned by locale (client.ts's fetchQuizzes/fetchQuiz
+// doc comment — measured live: `quizzes.json` lives directly under the API
+// root, not under `{locale}/`), so this cache is one shared directory, not
+// one file per locale the way `indexCacheFile` above is.
+const getQuizzesDirectory = lazy(() => new Directory(Paths.cache, "quizzes"));
+
+function quizListCacheFile(): File {
+  return new File(getQuizzesDirectory(), "list.json");
+}
+
+function quizDetailCacheFile(slug: string): File {
+  // Real quiz slugs are short, hyphenated identifiers ("aws-ml-specialty")
+  // with no path-hostile characters — unlike `markdownCacheFile`'s
+  // arbitrary content `path`, hashing here would only make the cache
+  // directory harder to inspect for no safety benefit.
+  return new File(getQuizzesDirectory(), `${slug}.json`);
+}
+
+/**
+ * Read-through cache for the quiz list, same cache-first shape as
+ * `getCachedIndex` above: a schema mismatch on the network fetch
+ * (`fetchQuizzes` internally calls `QuizListSchema.parse`) rejects before
+ * anything is written here, so a bad response never overwrites a
+ * previously-good cache file.
+ */
+export async function getCachedQuizzes(): Promise<QuizSummary[]> {
+  const file = quizListCacheFile();
+  if (file.exists) {
+    return QuizListSchema.parse(JSON.parse(await file.text()));
+  }
+  const quizzes = await fetchQuizzes();
+  getQuizzesDirectory().create({ idempotent: true, intermediates: true });
+  file.create({ overwrite: true });
+  file.write(JSON.stringify(quizzes));
+  return quizzes;
+}
+
+/**
+ * Read-through cache for one quiz's full detail (questions + explanations),
+ * so a quiz already downloaded once can be retaken offline. Same
+ * cache-first shape as `getCachedQuizzes` above.
+ */
+export async function getCachedQuiz(slug: string): Promise<QuizDetail> {
+  const file = quizDetailCacheFile(slug);
+  if (file.exists) {
+    return QuizDetailSchema.parse(JSON.parse(await file.text()));
+  }
+  const quiz = await fetchQuiz(slug);
+  getQuizzesDirectory().create({ idempotent: true, intermediates: true });
+  file.create({ overwrite: true });
+  file.write(JSON.stringify(quiz));
+  return quiz;
+}
+
+function quizAttemptStorageKey(slug: string): string {
+  return `xdev:quizAttempt:${slug}`;
+}
+
+/**
+ * The saved in-progress attempt for `slug`, or `null` if there isn't one —
+ * spec requirement "thoát giữa chừng rồi quay lại không được mất bài đang
+ * làm" (exit mid-quiz and come back without losing progress). Small,
+ * infrequently-written JSON — AsyncStorage is the right tool here, same as
+ * `getCachedManifestVersion` above, unlike the index/quiz list/markdown
+ * caches, which can be large enough to need the filesystem (see
+ * `getCachedIndex`'s doc comment on AsyncStorage's CursorWindow limit).
+ *
+ * A stored blob that fails to parse or fails `QuizAttemptStateSchema`
+ * (corrupted, or an old shape from a previous app version) resolves to
+ * `null` rather than rejecting: losing a resumable attempt to "start over"
+ * is an acceptable degradation, crashing the quiz screen on launch is not.
+ */
+export async function getSavedQuizAttempt(slug: string): Promise<QuizAttemptState | null> {
+  const raw = await AsyncStorage.getItem(quizAttemptStorageKey(slug));
+  if (raw === null) return null;
+  try {
+    return QuizAttemptStateSchema.parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Overwrites the saved attempt for `attempt.slug` — called on every answer
+ * change and question move (not just on unmount/cleanup), since exiting the
+ * app via the OS (not just navigating within it) never runs a cleanup
+ * function.
+ */
+export async function saveQuizAttempt(attempt: QuizAttemptState): Promise<void> {
+  await AsyncStorage.setItem(quizAttemptStorageKey(attempt.slug), JSON.stringify(attempt));
+}
+
+/** Called once an attempt is finished (submitted, or time ran out) — nothing left to resume. */
+export async function clearSavedQuizAttempt(slug: string): Promise<void> {
+  await AsyncStorage.removeItem(quizAttemptStorageKey(slug));
 }

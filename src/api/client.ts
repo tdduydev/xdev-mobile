@@ -2,10 +2,14 @@ import { API_BASE, type Locale } from "./config";
 import {
   IndexSchema,
   ManifestSchema,
+  QuizDetailSchema,
+  QuizListSchema,
   SeriesListSchema,
   TaxonomySchema,
   type IndexEntry,
   type Manifest,
+  type QuizDetail,
+  type QuizSummary,
   type Series,
   type Taxonomy,
 } from "./schema";
@@ -51,6 +55,20 @@ export async function fetchSeriesList(locale: Locale): Promise<Series[]> {
 
 export async function fetchTaxonomy(locale: Locale): Promise<Taxonomy> {
   return TaxonomySchema.parse(await getJson(`${locale}/taxonomy.json`));
+}
+
+/**
+ * Quizzes are not partitioned by locale — one shared payload regardless of
+ * the app's current `locale` (measured live 2026-09-18: `quizzes.json`
+ * lives directly under the API root, not under `{locale}/`, unlike
+ * `index.json`/`series.json`/`taxonomy.json` above).
+ */
+export async function fetchQuizzes(): Promise<QuizSummary[]> {
+  return QuizListSchema.parse(await getJson("quizzes.json"));
+}
+
+export async function fetchQuiz(slug: string): Promise<QuizDetail> {
+  return QuizDetailSchema.parse(await getJson(`quiz/${slug}.json`));
 }
 
 /**
