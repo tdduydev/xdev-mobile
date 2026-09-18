@@ -56,3 +56,6 @@ credentials.json
 .env
 .env.*
 !.env.example
+
+# SDD workspace — artefact quy trình, không thuộc repo
+/.superpowers/
