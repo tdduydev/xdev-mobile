@@ -3,13 +3,16 @@ import { useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { SymbolView } from 'expo-symbols';
+
 import { resolveAssetUrl } from '@/api/config';
 import type { Series } from '@/api/schema';
 import { EmptyState } from '@/components/empty-state';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ThumbnailImage } from '@/components/thumbnail-image';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Spacing, TouchTarget } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useContent } from '@/state/content';
 
 function SeriesRow({
@@ -26,22 +29,23 @@ function SeriesRow({
   // `onLessonPress` below and post/[slug].tsx's route-resolution comment).
   onLessonPress: (slug: string, id: string) => void;
 }) {
+  const theme = useTheme();
   const imageUrl = resolveAssetUrl(series.featuredImage);
   const metaParts = [series.category?.name, series.level, series.lessonCount ? `${series.lessonCount} lessons` : undefined].filter(
     (part): part is string => Boolean(part),
   );
 
   return (
-    <ThemedView type="backgroundElement" style={styles.seriesCard}>
+    <ThemedView type="background" style={[styles.seriesCard, { borderColor: theme.border }]}>
       <Pressable onPress={onToggle} style={({ pressed }) => pressed && styles.pressed}>
         <View style={styles.seriesHeader}>
-          {imageUrl && <ThumbnailImage uri={imageUrl} style={styles.seriesImage} contentFit="cover" />}
+          {imageUrl && <ThumbnailImage uri={imageUrl} title={series.title} style={styles.seriesImage} contentFit="cover" />}
           <View style={styles.seriesHeaderBody}>
-            <ThemedText type="smallBold" numberOfLines={2}>
+            <ThemedText type="cardTitle" numberOfLines={2}>
               {series.title}
             </ThemedText>
             {series.description.length > 0 && (
-              <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
+              <ThemedText type="default" themeColor="textSecondary" numberOfLines={2}>
                 {series.description}
               </ThemedText>
             )}
@@ -51,6 +55,17 @@ function SeriesRow({
               </ThemedText>
             )}
           </View>
+          {/* The only signal (before this fix) that a series could even be
+              opened was memory of having tapped it — no chevron, no visual
+              affordance at all. Rotating a single chevron reads as
+              open/closed without needing two separate icon assets. */}
+          <SymbolView
+            name={{ ios: 'chevron.right', android: 'expand_more', web: 'expand_more' }}
+            fallback={null}
+            size={16}
+            tintColor={theme.textSecondary}
+            style={[styles.chevron, expanded && styles.chevronExpanded]}
+          />
         </View>
       </Pressable>
 
@@ -59,7 +74,7 @@ function SeriesRow({
           {series.chapters.map((chapter, chapterIndex) => (
             <View key={`${chapter.title}-${chapterIndex}`} style={styles.chapter}>
               {chapter.title.length > 0 && (
-                <ThemedText type="smallBold" style={styles.chapterTitle}>
+                <ThemedText type="label" themeColor="textSecondary" style={styles.chapterTitle}>
                   {chapter.title}
                 </ThemedText>
               )}
@@ -68,7 +83,7 @@ function SeriesRow({
                   key={lesson.id}
                   onPress={() => onLessonPress(lesson.slug, lesson.id)}
                   style={({ pressed }) => [styles.lessonRow, pressed && styles.pressed]}>
-                  <ThemedText type="small">{lesson.title}</ThemedText>
+                  <ThemedText type="default">{lesson.title}</ThemedText>
                 </Pressable>
               ))}
             </View>
@@ -174,6 +189,7 @@ const styles = StyleSheet.create({
   },
   seriesCard: {
     borderRadius: Spacing.three,
+    borderWidth: 1,
     padding: Spacing.three,
     gap: Spacing.three,
   },
@@ -191,6 +207,12 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: Spacing.half,
   },
+  chevron: {
+    transform: [{ rotate: '0deg' }],
+  },
+  chevronExpanded: {
+    transform: [{ rotate: '90deg' }],
+  },
   chapters: {
     gap: Spacing.two,
     paddingTop: Spacing.two,
@@ -201,8 +223,13 @@ const styles = StyleSheet.create({
   chapterTitle: {
     marginBottom: Spacing.half,
   },
+  // `minHeight` (not padding math) guarantees the ≥44 touch target
+  // regardless of the lesson title's line count — a two-line title must not
+  // shrink the tappable row back under the floor.
   lessonRow: {
+    minHeight: TouchTarget,
+    justifyContent: 'center',
     paddingVertical: Spacing.one,
-    paddingLeft: Spacing.three,
+    paddingLeft: Spacing.four,
   },
 });
