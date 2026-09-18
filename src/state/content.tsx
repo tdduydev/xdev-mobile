@@ -150,13 +150,11 @@ export function ContentProvider({ children }: { children: ReactNode }) {
     }
   }, [locale]);
 
-  // Genuine `.then()/.catch()` chaining, not async/await — copied verbatim
-  // from `series.tsx`'s pre-lift `load()` (same function, moved up a
-  // level): calling an async/await version of this from the effect below
-  // still trips `react-hooks/set-state-in-effect`, because it only
-  // recognizes a setState call as deferred when it sits inside a
-  // `.then()`/`.catch()` callback (a separate closure), not merely
-  // sequenced after an `await` in the calling function itself.
+  // Called from an event handler (the Series tab's retry button) — never
+  // from inside a `useEffect` — same rationale as `refresh()` above it, so
+  // an in-flight fetch with no `cancelled` guard is fine here for the same
+  // reason it's fine there: nothing but a single explicit user action calls
+  // this.
   const refreshSeries = useCallback(() => {
     return fetchSeriesList(locale)
       .then((list) => setSeriesSnapshot({ locale, series: list, error: null }))
@@ -168,9 +166,38 @@ export function ContentProvider({ children }: { children: ReactNode }) {
       });
   }, [locale]);
 
+  // The automatic load, run on mount and on every locale switch — kept
+  // separate from `refreshSeries` above (rather than that effect just
+  // calling it) because THIS one needs the `cancelled` guard the retry
+  // button doesn't: switch locale twice in quick succession (e.g. vi → en
+  // before vi's `series.json` fetch has resolved) and, without it, the
+  // slower vi response can resolve after the faster en one and overwrite
+  // it — `isSeriesCurrent` then reads `false` forever (`seriesSnapshot.
+  // locale` stuck on `"vi"` while `locale` is `"en"`), with no effect
+  // left to rerun and correct it, since `locale` itself never changes
+  // again. `entries`'s equivalent effect below guards the exact same race
+  // for the index the same way. `series.tsx`'s pre-lift version of this
+  // code had this same gap unguarded, and [Unverified in this environment
+  // — not confirmed against expo-router/ui's actual unmount behavior]
+  // MAY have self-healed there if leaving the Series tab unmounted the
+  // screen and returning remounted it (a fresh `load()` on mount). This
+  // provider never unmounts for the app's lifetime, so it can't rely on
+  // that even if it were true — the guard is needed regardless.
   useEffect(() => {
-    refreshSeries();
-  }, [refreshSeries]);
+    let cancelled = false;
+    fetchSeriesList(locale)
+      .then((list) => {
+        if (cancelled) return;
+        setSeriesSnapshot({ locale, series: list, error: null });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setSeriesSnapshot({ locale, series: null, error: toError(err) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [locale]);
 
   useEffect(() => {
     let cancelled = false;
