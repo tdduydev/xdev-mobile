@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { clearSavedQuizAttempt, getCachedQuiz, getSavedQuizAttempt, saveQuizAttempt } from '@/api/cache';
@@ -160,7 +160,11 @@ export default function QuizScreen() {
   };
 
   if (isLoading) {
-    return <ThemedView style={styles.centerFill} />;
+    return (
+      <ThemedView style={styles.centerFill}>
+        <ActivityIndicator />
+      </ThemedView>
+    );
   }
 
   if (loadError || !quiz) {
@@ -180,7 +184,11 @@ export default function QuizScreen() {
   }
 
   if (!attempt) {
-    return <ThemedView style={styles.centerFill} />;
+    return (
+      <ThemedView style={styles.centerFill}>
+        <ActivityIndicator />
+      </ThemedView>
+    );
   }
 
   if (result) {
@@ -321,6 +329,8 @@ const styles = StyleSheet.create({
   },
   centerFill: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   progressRow: {
     flexDirection: 'row',

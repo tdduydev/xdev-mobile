@@ -74,6 +74,20 @@ describe("resumeOrCreateAttempt", () => {
     const attempt = resumeOrCreateAttempt(quiz(), null, NOW);
     expect(attempt.answers).toEqual([null, null]);
   });
+
+  // Locks in the behavior the quiz screen's resume-after-expiry auto-submit
+  // depends on: an attempt whose deadline already passed while the app was
+  // closed is still RESUMED (not silently replaced with a fresh one) —
+  // the screen derives `isExpired` from the resumed `deadlineMs` on its own
+  // and renders the result screen for it. Creating a fresh attempt here
+  // instead would reset the deadline to a NEW `now + duration`, silently
+  // granting extra time nobody asked for.
+  it("resumes a saved attempt even when its deadline has already passed", () => {
+    const saved: QuizAttemptState = { slug: "example-quiz", answers: [0, null], currentIndex: 1, deadlineMs: NOW - 1000 };
+    const attempt = resumeOrCreateAttempt(quiz(), saved, NOW);
+    expect(attempt).toBe(saved);
+    expect(isExpired(attempt, NOW)).toBe(true);
+  });
 });
 
 describe("isExpired / remainingSeconds", () => {
