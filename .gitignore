@@ -41,3 +41,18 @@ example
 # generated native folders
 /ios
 /android
+
+# Credential — repo này public, không thứ nào dưới đây được commit.
+# EAS và GitHub Secrets giữ chúng, không phải git.
+*.p8
+*.p12
+*.mobileprovision
+*.jks
+*.keystore
+google-services.json
+GoogleService-Info.plist
+*service-account*.json
+credentials.json
+.env
+.env.*
+!.env.example

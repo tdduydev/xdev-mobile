@@ -1,14 +1,15 @@
 {
   "expo": {
-    "name": "xdev-mobile",
+    "name": "xDev Asia",
     "slug": "xdev-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "xdevmobile",
+    "scheme": "xdevasia",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "asia.xdev.mobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +18,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "asia.xdev.mobile"
     },
     "web": {
       "output": "static",
