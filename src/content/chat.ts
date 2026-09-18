@@ -39,6 +39,17 @@ export const ARTICLE_CONTEXT_MAX_CHARS = 6000;
 const TRUNCATION_NOTE = '\n\n[Nội dung bài viết đã bị cắt bớt do quá dài]';
 
 /**
+ * Task 16: shown when `personal-data.ts`'s on-device daily counter
+ * (`DAILY_AI_QUESTION_LIMIT`) is exhausted — BEFORE this device ever calls
+ * Gemini. Deliberately distinct copy from `classifyGeminiError`'s 429/403
+ * branch below: that one fires when a call reached Google and Google
+ * itself said no; this one fires earlier, entirely offline, so it can't
+ * honestly say "máy chủ AI" (the server) had anything to do with it.
+ */
+export const AI_QUESTION_LIMIT_MESSAGE =
+  'Bạn đã dùng hết lượt hỏi AI cho hôm nay trên máy này. Lượt hỏi sẽ được cấp lại vào ngày mai.';
+
+/**
  * Cuts the article body down to `maxChars` for the prompt. A short article
  * (the common case — most xDev lessons) passes through untouched. A very
  * long one (brief: "bài rất dài... đừng ném cả bài 60 nghìn từ vào prompt")

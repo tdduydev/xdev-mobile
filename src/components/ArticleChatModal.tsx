@@ -2,10 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { getAiQuestionsRemaining, LOW_AI_QUESTION_WARNING_THRESHOLD, recordAiQuestion } from '@/api/personal-data';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, TouchTarget } from '@/constants/theme';
-import { buildChatPrompt, classifyGeminiError, formatConversationHistory, truncateArticleContext, type ChatMessage } from '@/content/chat';
+import {
+  AI_QUESTION_LIMIT_MESSAGE,
+  buildChatPrompt,
+  classifyGeminiError,
+  formatConversationHistory,
+  truncateArticleContext,
+  type ChatMessage,
+} from '@/content/chat';
 import { getGeminiModel } from '@/firebase/ai';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -56,7 +64,28 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  // `null` until the on-device daily count loads — treated as "not
+  // exhausted yet" in the meantime (see the `disabled` prop below), since
+  // `recordAiQuestion` inside `send()` is the actual gate; this is only
+  // for the proactive hint/banner (brief: "đừng đợi hết mới báo").
+  const [remaining, setRemaining] = useState<number | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+
+  // Task 16: this component instance is reused across opens/closes of the
+  // same article (see the `key={`chat-${entry.id}`}` comment in this
+  // file's header doc) rather than remounted, so re-check on every open —
+  // the local day may have rolled over, or another article's chat may
+  // have spent turns, while this sheet was closed.
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    getAiQuestionsRemaining().then((value) => {
+      if (!cancelled) setRemaining(value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
 
   // Manual keyboard-height tracking, NOT `KeyboardAvoidingView` — measured
   // on-device (iPhone 16 Pro simulator): `KeyboardAvoidingView`, whether
@@ -92,7 +121,18 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
 
   const send = useCallback(async () => {
     const question = input.trim();
-    if (!question || sending) return;
+    if (!question || sending || remaining === 0) return;
+
+    // Task 16: record the attempt against the on-device daily counter
+    // BEFORE calling Gemini at all — the point is capping how often this
+    // device fires requests, not how often they succeed (see
+    // personal-data.ts's `recordAiQuestion` doc comment). The `remaining
+    // === 0` check above already disables the Send button for the normal
+    // case; this is the race-safe source of truth for the rare press that
+    // slips in right as the count turns over.
+    const usage = await recordAiQuestion();
+    setRemaining(usage.remaining);
+    if (!usage.allowed) return;
 
     setErrorNotice(null);
     setInput('');
@@ -117,7 +157,7 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
     } finally {
       setSending(false);
     }
-  }, [input, sending, messages, title, articleContext]);
+  }, [input, sending, remaining, messages, title, articleContext]);
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -138,6 +178,27 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
                 <ThemedText type="default">Đóng</ThemedText>
               </Pressable>
             </View>
+
+            {/* Task 16: proactive quota state, separate from `errorNotice`
+                below (which is about an actual failed Gemini call). Shown
+                as soon as the sheet opens if already exhausted, and once
+                the remaining count drops low — brief: "còn ít lượt thì
+                nói trước, đừng đợi hết mới báo" / "hết lượt: vô hiệu hoá
+                nút gửi kèm lời giải thích đọc được". */}
+            {remaining === 0 && (
+              <View style={[styles.errorBanner, { backgroundColor: theme.dangerSoft, borderColor: theme.danger }]}>
+                <ThemedText type="small" themeColor="danger">
+                  {AI_QUESTION_LIMIT_MESSAGE}
+                </ThemedText>
+              </View>
+            )}
+            {remaining !== null && remaining > 0 && remaining <= LOW_AI_QUESTION_WARNING_THRESHOLD && (
+              <View style={[styles.errorBanner, { backgroundColor: theme.warningSoft, borderColor: theme.warning }]}>
+                <ThemedText type="small" themeColor="warning">
+                  {`Còn ${remaining} lượt hỏi AI hôm nay trên máy này.`}
+                </ThemedText>
+              </View>
+            )}
 
             {errorNotice && (
               <View style={[styles.errorBanner, { backgroundColor: theme.dangerSoft, borderColor: theme.danger }]}>
@@ -208,11 +269,11 @@ export function ArticleChatModal({ visible, onClose, title, articleMarkdown }: A
               />
               <Pressable
                 onPress={send}
-                disabled={sending || !input.trim()}
+                disabled={sending || !input.trim() || remaining === 0}
                 style={({ pressed }) => [
                   styles.sendButton,
                   { backgroundColor: theme.brand },
-                  (sending || !input.trim()) && styles.sendButtonDisabled,
+                  (sending || !input.trim() || remaining === 0) && styles.sendButtonDisabled,
                   pressed && styles.pressed,
                 ]}>
                 <ThemedText type="smallBold" style={{ color: theme.background }}>
