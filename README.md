@@ -74,10 +74,25 @@ Tức là Expo Go ra Internet được, ra googleapis.com được, chỉ riêng
 không. Cả `fetch` lẫn `XHR` cùng chết nên không lách được bằng cách đổi thư viện
 HTTP.
 
-Hệ quả: **phần chat chỉ kiểm chứng được trên development build hoặc máy thật.**
-Code và test đã sẵn sàng (xem `tests/chat.test.ts`), nhưng đừng kết luận chat
-hỏng khi thấy nó báo lỗi trong Expo Go — hãy dựng development build rồi thử lại.
-Nếu trên development build vẫn hỏng thì lúc đó mới là lỗi thật.
+Hệ quả: **phần chat chỉ chạy được trên development build hoặc máy thật.** Đừng
+kết luận chat hỏng khi thấy nó báo lỗi trong Expo Go.
+
+**Đã xác nhận chạy được trên development build** (2026-09-18, cùng iPhone 16 Pro
+simulator, dựng bằng `npx expo run:ios`): Gemini trả lời bình thường bằng tiếng
+Việt và câu trả lời có dẫn lại nội dung bài đang đọc, nên phần ngữ cảnh cũng
+đúng. Không gặp 403, tức App Check enforcement quả thật đang tắt ở phía project —
+trước đó điều này chỉ suy ra gián tiếp từ việc web gọi được API mà không có App
+Check.
+
+Dựng development build trên máy (không cần EAS, không phải xếp hàng):
+
+```bash
+cd ios && LANG=en_US.UTF-8 pod install && cd ..
+npx expo run:ios
+```
+
+`LANG` là bắt buộc: thiếu nó CocoaPods chết với `Unicode Normalization not
+appropriate for ASCII-8BIT`.
 
 ## Kiểm tra
 
