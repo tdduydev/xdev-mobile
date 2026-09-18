@@ -251,3 +251,43 @@ export const QuizAttemptStateSchema = z.object({
   deadlineMs: z.number().int().positive(),
 });
 export type QuizAttemptState = z.infer<typeof QuizAttemptStateSchema>;
+
+/**
+ * Local personal data (Task 13) — same rationale as `QuizAttemptStateSchema`
+ * above: not part of the Content API's wire contract, but every JSON blob
+ * this app round-trips through on-device storage still gets a schema here
+ * so a corrupted or old-shape value fails closed (discard, fall back to
+ * empty) instead of crashing a screen or an auth-triggered sync.
+ *
+ * One doc per bookmarked post, keyed by `slug` at the call site (an array,
+ * not a map, mirrors the Firestore layout it mirrors — one doc per slug
+ * under `users/{uid}/bookmarks/{postSlug}`, per `firestore.rules`).
+ */
+export const BookmarkSchema = z.object({
+  slug: z.string().min(1),
+  // Epoch ms — used to break ties when merging local and remote bookmarks
+  // after sign-in (last-write-wins), the same role `deadlineMs` plays in
+  // `QuizAttemptStateSchema` above.
+  savedAt: z.number().int().nonnegative(),
+});
+export type Bookmark = z.infer<typeof BookmarkSchema>;
+
+export const BookmarksListSchema = z.array(BookmarkSchema);
+
+/**
+ * One entry per series — the last lesson opened, mirroring the Firestore
+ * layout at `users/{uid}/progress/{seriesSlug}`. `lessonId` (not just
+ * `lessonSlug`) is carried for the same reason `series-navigation.ts`
+ * matches lessons by `id`: two different lessons in the same series tree
+ * have been observed to share a `slug`.
+ */
+export const ReadingProgressEntrySchema = z.object({
+  lessonId: z.string().min(1),
+  lessonSlug: z.string().min(1),
+  updatedAt: z.number().int().nonnegative(),
+});
+export type ReadingProgressEntry = z.infer<typeof ReadingProgressEntrySchema>;
+
+/** Keyed by `seriesSlug` — a map, not an array, since there is at most one entry per series. */
+export const ReadingProgressMapSchema = z.record(z.string(), ReadingProgressEntrySchema);
+export type ReadingProgressMap = z.infer<typeof ReadingProgressMapSchema>;

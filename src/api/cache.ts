@@ -12,6 +12,7 @@ import {
   type QuizDetail,
   type QuizSummary,
 } from "./schema";
+import { QUIZ_ATTEMPT_KEY_PREFIX } from "./storage-keys";
 
 const MANIFEST_VERSION_KEY = "xdev:manifestVersion";
 
@@ -238,7 +239,7 @@ export async function getCachedQuiz(slug: string): Promise<QuizDetail> {
 }
 
 function quizAttemptStorageKey(slug: string): string {
-  return `xdev:quizAttempt:${slug}`;
+  return `${QUIZ_ATTEMPT_KEY_PREFIX}${slug}`;
 }
 
 /**
