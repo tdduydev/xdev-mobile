@@ -28,11 +28,16 @@ vi.mock("@react-native-async-storage/async-storage", () => {
 
 import {
   clearPersonalData,
+  DAILY_AI_QUESTION_LIMIT,
+  getAiQuestionsRemaining,
   getBookmarks,
   getReadingProgress,
   isBookmarked,
+  localDayKey,
   mergeBookmarks,
   mergeReadingProgress,
+  recordAiQuestion,
+  resolveAiQuestionUsage,
   saveBookmarks,
   saveReadingProgress,
   toggleBookmark,
@@ -186,6 +191,10 @@ describe("clearPersonalData", () => {
     mock.__seed("xdev:locale", "vi");
     mock.__seed("xdev:theme", "system");
     mock.__seed("xdev:manifestVersion", "42");
+    // Task 16: a device rate limit, not identity data — sign-out must not
+    // give the same device a free quota reset (see personal-data.ts's
+    // comment on `clearPersonalData`).
+    mock.__seed("xdev:aiQuestionUsage", JSON.stringify({ day: "2026-09-18", count: 3 }));
 
     await clearPersonalData();
 
@@ -193,6 +202,82 @@ describe("clearPersonalData", () => {
     expect(await getReadingProgress()).toEqual({});
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const remainingKeys = await AsyncStorage.getAllKeys();
-    expect([...remainingKeys].sort()).toEqual(["xdev:locale", "xdev:manifestVersion", "xdev:theme"]);
+    expect([...remainingKeys].sort()).toEqual(["xdev:aiQuestionUsage", "xdev:locale", "xdev:manifestVersion", "xdev:theme"]);
+  });
+});
+
+describe("localDayKey", () => {
+  it("is timezone-independent to test the same way it will run: same local day, any local time, same key", () => {
+    // `new Date(year, monthIndex, day, ...)` builds from LOCAL fields, so
+    // this doesn't depend on the machine's/CI's actual timezone — the
+    // point being tested (local calendar day, not UTC) holds either way.
+    expect(localDayKey(new Date(2026, 8, 19, 0, 0, 0))).toBe("2026-09-19");
+    expect(localDayKey(new Date(2026, 8, 19, 23, 59, 59))).toBe("2026-09-19");
+  });
+
+  it("changes at local midnight, not at a fixed offset", () => {
+    expect(localDayKey(new Date(2026, 8, 18, 23, 59, 59))).toBe("2026-09-18");
+    expect(localDayKey(new Date(2026, 8, 19, 0, 0, 0))).toBe("2026-09-19");
+  });
+
+  it("zero-pads month and day so keys compare correctly as plain strings", () => {
+    expect(localDayKey(new Date(2026, 0, 5))).toBe("2026-01-05");
+  });
+});
+
+describe("resolveAiQuestionUsage", () => {
+  it("starts a fresh zero-count bucket when nothing is stored yet", () => {
+    expect(resolveAiQuestionUsage(null, "2026-09-19")).toEqual({ day: "2026-09-19", count: 0 });
+  });
+
+  it("keeps the same bucket's count on the same local day", () => {
+    expect(resolveAiQuestionUsage({ day: "2026-09-19", count: 3 }, "2026-09-19")).toEqual({ day: "2026-09-19", count: 3 });
+  });
+
+  it("grants a fresh bucket on a day strictly after the stored one", () => {
+    expect(resolveAiQuestionUsage({ day: "2026-09-18", count: 5 }, "2026-09-19")).toEqual({ day: "2026-09-19", count: 0 });
+  });
+
+  it("does NOT grant a fresh bucket when the clock is wound back before the stored day (brief's anti-abuse rule)", () => {
+    const afterRollback = resolveAiQuestionUsage({ day: "2026-09-19", count: 5 }, "2026-09-18");
+    // The already-recorded (higher) day is kept as-is — not reset, and not
+    // overwritten with the earlier "today".
+    expect(afterRollback).toEqual({ day: "2026-09-19", count: 5 });
+  });
+});
+
+describe("getAiQuestionsRemaining / recordAiQuestion", () => {
+  const today = new Date(2026, 8, 19, 12, 0, 0);
+
+  it("reports the full limit before anything has been asked today", async () => {
+    expect(await getAiQuestionsRemaining(today)).toBe(DAILY_AI_QUESTION_LIMIT);
+  });
+
+  it("counts down one per recorded question and disallows once the limit is reached", async () => {
+    for (let i = 0; i < DAILY_AI_QUESTION_LIMIT; i++) {
+      const result = await recordAiQuestion(today);
+      expect(result.allowed).toBe(true);
+    }
+    expect(await getAiQuestionsRemaining(today)).toBe(0);
+
+    const exhausted = await recordAiQuestion(today);
+    expect(exhausted).toEqual({ allowed: false, remaining: 0 });
+  });
+
+  it("resets the very next local day", async () => {
+    for (let i = 0; i < DAILY_AI_QUESTION_LIMIT; i++) await recordAiQuestion(today);
+    expect(await getAiQuestionsRemaining(today)).toBe(0);
+
+    const tomorrow = new Date(2026, 8, 20, 0, 0, 1);
+    expect(await getAiQuestionsRemaining(tomorrow)).toBe(DAILY_AI_QUESTION_LIMIT);
+  });
+
+  it("grants no extra turns when the system clock is wound back to yesterday", async () => {
+    for (let i = 0; i < DAILY_AI_QUESTION_LIMIT; i++) await recordAiQuestion(today);
+    expect(await getAiQuestionsRemaining(today)).toBe(0);
+
+    const yesterday = new Date(2026, 8, 18, 12, 0, 0);
+    expect(await getAiQuestionsRemaining(yesterday)).toBe(0);
+    expect(await recordAiQuestion(yesterday)).toEqual({ allowed: false, remaining: 0 });
   });
 });

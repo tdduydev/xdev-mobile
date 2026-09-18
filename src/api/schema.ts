@@ -291,3 +291,19 @@ export type ReadingProgressEntry = z.infer<typeof ReadingProgressEntrySchema>;
 /** Keyed by `seriesSlug` — a map, not an array, since there is at most one entry per series. */
 export const ReadingProgressMapSchema = z.record(z.string(), ReadingProgressEntrySchema);
 export type ReadingProgressMap = z.infer<typeof ReadingProgressMapSchema>;
+
+/**
+ * Task 16: the on-device daily counter behind the "Hỏi AI về bài viết" send
+ * limit. `day` is a local-calendar `YYYY-MM-DD` key (see
+ * `personal-data.ts#localDayKey` — deliberately NOT UTC, so a day boundary
+ * lands at midnight in the user's own timezone). Unlike `Bookmark`/
+ * `ReadingProgressEntry` above, this is NOT identity-linked: it exists to
+ * throttle one device's calls against `xdev-asia`'s shared, project-wide
+ * Gemini quota, so it must survive sign-out/sign-in on the same device —
+ * `clearPersonalData` in personal-data.ts deliberately does not touch it.
+ */
+export const AiQuestionUsageSchema = z.object({
+  day: z.string().min(1),
+  count: z.number().int().nonnegative(),
+});
+export type AiQuestionUsage = z.infer<typeof AiQuestionUsageSchema>;
